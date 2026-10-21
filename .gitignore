@@ -1,0 +1,22 @@
+# --- Secrets: never commit ---
+voice/corelynx.env
+voice/tv-token.txt
+*.env
+!*.env.example
+
+# --- Personal recordings and logs ---
+voice/diag/
+*.log
+
+# --- Apple SF Pro: licensed for personal use on this TV only, not for redistribution ---
+frame-launcher/fonts/SF-Pro-*
+
+# --- Large or downloadable files (see README for how to get them) ---
+voice/models/
+frame-launcher/media/wallpaper.mp4
+*.wgt
+
+# --- Generated at runtime / local tooling ---
+voice/chime.wav
+__pycache__/
+.claude/

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, user-scalable=no">
+  <meta name="color-scheme" content="dark">
+  <title>Home</title>
+  <link rel="stylesheet" href="css/home.css">
+</head>
+<body class="lock">
+  <div id="stage">
+    <video class="wall" id="wall" src="media/wallpaper.mp4" poster="media/poster.jpg" autoplay muted loop playsinline aria-hidden="true"></video>
+
+    <!-- Lock: date, glass clock and one way in. -->
+    <div class="lockscreen" id="lockscreen">
+      <div class="date" id="lockDate"></div>
+      <canvas class="clock" id="clockCanvas" width="1920" height="600" aria-hidden="true"></canvas>
+      <div class="sr" id="clockText" role="timer" aria-live="off"></div>
+    </div>
+    <div class="up frost" id="up" role="button" aria-label="Show apps">
+      <svg width="30" height="18" viewBox="0 0 30 18" aria-hidden="true"><path d="M3 15L15 4l12 11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+
+    <!-- Apps: a bento grid with a calendar widget. -->
+    <div class="bento" id="bento" role="list" aria-label="Apps">
+      <div class="widget frost" id="widget" aria-hidden="true">
+        <div class="w-now">
+          <div class="w-time" id="wTime">10:31</div>
+          <div class="w-day" id="wDay">Wednesday</div>
+          <div class="w-date" id="wDate">21 October</div>
+        </div>
+        <div class="w-cal">
+          <div class="w-month" id="wMonth">October</div>
+          <div class="w-grid" id="wGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="js/apps.js"></script>
+  <script src="js/home.js"></script>
+</body>
+</html>

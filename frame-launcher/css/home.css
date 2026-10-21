@@ -1,0 +1,194 @@
+/* Home for The Frame: live wallpaper, glass lock clock, bento app grid. SF Pro (subset, personal use).
+   Dark only; Tizen 6.0 (Chrome 76) safe. Over the video, things only move or fade by
+   transform/opacity on their own layers; the glass is static, so the video never forces a repaint. */
+
+@font-face { font-family: 'SF Display'; src: url(../fonts/SF-Pro-Display-Medium.woff2) format('woff2'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'SF Display'; src: url(../fonts/SF-Pro-Display-Semibold.woff2) format('woff2'); font-weight: 600; font-display: block; }
+@font-face { font-family: 'SF Display'; src: url(../fonts/SF-Pro-Display-Bold.woff2) format('woff2'); font-weight: 700; font-display: block; }
+@font-face { font-family: 'SF Text'; src: url(../fonts/SF-Pro-Text-Medium.woff2) format('woff2'); font-weight: 500; font-display: block; }
+
+:root {
+  color-scheme: dark;
+  --ink: #0B0F0D;
+  --paper: #F4F3EE;
+  --pencil: rgba(244, 243, 238, 0.62);
+  --glass-fill: rgba(255, 255, 255, 0.17);
+  --glass-rim: rgba(255, 255, 255, 0.58);
+  --glass-tint: rgba(10, 16, 13, 0.46);     /* widget / button body: a dark tint of the forest */
+  --rim: inset 0 0 0 1.5px rgba(255,255,255,0.16), inset 0 2px 1px -1px rgba(255,255,255,0.46);
+  --ease: cubic-bezier(0.2, 0.75, 0.15, 1);
+  --display: 'SF Display', 'Segoe UI', sans-serif;
+  --text: 'SF Text', 'SF Display', 'Segoe UI', sans-serif;
+}
+
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); }
+body { font-family: var(--display); font-weight: 500; color: var(--paper); -webkit-font-smoothing: antialiased; cursor: default; }
+
+#stage {
+  position: absolute; left: 50%; top: 50%;
+  width: 1920px; height: 1080px; overflow: hidden;
+  transform: translate(-50%, -50%);
+  background: var(--ink) url(../media/poster.jpg) center / cover no-repeat;
+}
+.wall { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; object-fit: cover; display: block; }
+
+/* ---------- lock ---------- */
+
+.lockscreen {
+  position: absolute; left: 0; right: 0; top: 0; height: 640px;
+  will-change: transform, opacity;
+  transition: opacity 0.34s ease, transform 0.42s var(--ease);
+}
+body.apps .lockscreen { opacity: 0; transform: translateY(-36px); }
+
+.date {
+  position: absolute; left: 0; right: 0; top: 60px; text-align: center;
+  font-weight: 600; font-size: 36px; letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Glass clock, iOS 26 style: SF Pro Display Bold, tall, tightly tracked, frosted. Drawn by home.js
+   into this canvas once per minute: the browser keeps a canvas as a finished texture, so showing
+   the lock screen again costs nothing (as CSS text clipping it measured ~150 ms on every Back).
+   Partly transparent, so on the TV the live video shows through the frost. No outline, no shadow. */
+.clock { position: absolute; left: 0; top: 104px; width: 1920px; height: 600px; display: block; opacity: 0.74; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- Liquid Glass surface (button, widget, big cards) ----------
+   Pre-blurred scene aligned behind the element (--bx/--by), a light veil, and a rim that is
+   brightest at the top-left and bottom-right edges. All static: drawn once. */
+.frost {
+  background-color: rgba(18, 26, 22, 0.4);
+  background-image:
+    linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 42%, rgba(255,255,255,0.03) 100%),
+    url(../media/frost.jpg);
+  background-size: 100% 100%, 1920px 1080px;
+  background-position: 0 0, var(--bx, 0) var(--by, 0);
+  background-repeat: no-repeat;
+}
+.frost::after, .card::after {
+  content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; z-index: 2;
+  padding: 1.6px; box-sizing: border-box;
+  background: linear-gradient(140deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.08) 30%, rgba(255,255,255,0.02) 55%, rgba(255,255,255,0.18) 100%);
+  -webkit-mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+/* The one way in: a small glass button with an up arrow. */
+.up {
+  position: absolute; left: 50%; bottom: 58px; width: 88px; height: 88px; margin-left: -44px;
+  border-radius: 50%; box-shadow: 0 18px 40px -18px rgba(0,0,0,0.6);
+  color: var(--paper); text-align: center;
+  will-change: transform, opacity;
+  transition: opacity 0.6s ease, transform 0.42s var(--ease);
+}
+.up svg { position: absolute; left: 29px; top: 34px; }
+body.quiet .up { opacity: 0.32; transition-duration: 1.4s; }
+body.apps .up { opacity: 0; transform: translateY(24px); transition-duration: 0.24s; }
+.up.is-pressed { transform: scale(0.92); transition-duration: 0.1s; }
+
+/* ---------- apps: bento grid ---------- */
+
+.bento {
+  position: absolute; left: 188px; top: 216px; width: 1544px; height: 648px;
+  display: grid;
+  grid-template-columns: repeat(7, 200px);
+  grid-template-rows: repeat(3, 200px);
+  grid-gap: 24px;
+  grid-template-areas:
+    "yt yt nf nf cal cal cal"
+    "yt yt nf nf cal cal cal"
+    "pv pv sp at ga  br  mt";
+  will-change: transform, opacity;
+  transition: opacity 0.3s ease, transform 0.42s var(--ease);
+}
+/* Exactly 0. Measured on the TV: at a near-zero opacity the TV draws the grid at low quality and
+   redraws it on every Up (~180 ms). At 0 only the very first Up after Home starts has to draw it. */
+/* Exit faster than enter: on Back the grid goes instantly while the clock fades in over it.
+   Measured: fading the grid out cost a 170-200 ms frame on the TV; instant is ~45 ms. */
+body.lock .bento { opacity: 0; transform: translateY(44px); pointer-events: none; transition: none; }
+
+.tile {
+  position: relative; opacity: 0.88;
+  will-change: transform, opacity;   /* permanent layer: no promote/raster churn on each press */
+  transition: transform 0.22s var(--ease), opacity 0.22s ease;
+}
+.card {
+  position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+  border-radius: 44px; overflow: hidden; background: #1A1F1C;
+  box-shadow: 0 18px 40px -18px rgba(0,0,0,0.65);
+}
+.card img { position: absolute; display: block; }
+.glow, .t-name { display: none; }
+
+/* Small tiles are app icons, as on an iPad home screen. */
+.s1x1 .card img { left: 0; top: 0; width: 100%; height: 100%; }
+
+/* Big tiles are dark glass cards: rounded icon, name in SF Pro, a faint glow of the app's colour
+   (static, drawn once). Icons are only ever shown at or below their native 304 px. */
+.s2x2 .card, .s2x1 .card {
+  background-color: rgba(18, 26, 22, 0.4);
+  background-image:
+    linear-gradient(160deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 42%, rgba(255,255,255,0.03) 100%),
+    url(../media/frost.jpg);
+  background-size: 100% 100%, 1920px 1080px;
+  background-position: 0 0, var(--bx, 0) var(--by, 0);
+  background-repeat: no-repeat;
+}
+.s2x2 .glow, .s2x1 .glow { display: block; position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+.s2x2 .card img { left: 40px; top: 40px; width: 168px; height: 168px; border-radius: 38px; box-shadow: 0 10px 26px -10px rgba(0,0,0,0.6); }
+.s2x2 .t-name { display: block; position: absolute; left: 44px; bottom: 36px; font-weight: 600; font-size: 42px; letter-spacing: -0.01em; }
+.s2x1 .card img { left: 32px; top: 32px; width: 136px; height: 136px; border-radius: 31px; box-shadow: 0 10px 26px -10px rgba(0,0,0,0.6); }
+.s2x1 .t-name { display: block; position: absolute; left: 196px; top: 50%; margin-top: -25px; font-weight: 600; font-size: 38px; letter-spacing: -0.01em; white-space: nowrap; }
+/* Glass highlight + focus ring switch instantly (one small repaint); the tile lift animates. */
+.card::before {
+  content: ''; position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; z-index: 1;
+  background: linear-gradient(160deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.05) 36%, rgba(255,255,255,0) 58%);
+  opacity: 0;
+}
+/* Focus: a soft light edge with a glow, like light catching glass, not a drawn white border.
+   Still well above 3:1 against the dark scene, so it reads from the sofa. */
+.tile::before {
+  content: ''; position: absolute; left: -8px; top: -8px; right: -8px; bottom: -8px;
+  border: 2px solid rgba(255, 255, 255, 0.5); border-radius: 52px;
+  box-shadow: 0 0 26px rgba(255, 255, 255, 0.16), inset 0 0 18px rgba(255, 255, 255, 0.08);
+  opacity: 0;
+}
+.tile.is-focused { opacity: 1; }
+.tile.is-focused .card::before, .tile.is-focused::before { opacity: 1; }
+.s1x1.is-focused { transform: translateY(-6px) scale(1.08); }
+.s2x1.is-focused { transform: translateY(-6px) scale(1.05); }
+.s2x2.is-focused { transform: translateY(-6px) scale(1.035); }
+.tile.is-pressed { transform: scale(0.97); transition-duration: 0.1s; }
+
+/* Calendar widget: tinted glass, not focusable. */
+.widget {
+  grid-area: cal; position: relative; box-sizing: border-box; padding: 40px 40px 34px 46px;
+  border-radius: 44px; box-shadow: 0 18px 40px -18px rgba(0,0,0,0.6);
+  display: flex;
+}
+.w-now { flex: 1; padding-top: 6px; }
+.w-time { font-weight: 600; font-size: 116px; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.w-day { font-weight: 600; font-size: 34px; margin-top: 26px; }
+.w-date { font-size: 30px; color: var(--pencil); margin-top: 6px; }
+.w-cal { width: 294px; }
+.w-month { font-family: var(--text); font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; color: #E9A65A; margin: 4px 0 12px 6px; }
+.w-grid { display: grid; grid-template-columns: repeat(7, 42px); grid-auto-rows: 38px; font-family: var(--text); font-size: 21px; text-align: center; }
+.w-grid .wd { color: var(--pencil); font-size: 17px; line-height: 38px; }
+.w-grid .d { line-height: 38px; }
+.w-grid .d.today { background: var(--paper); color: #0B0F0D; border-radius: 50%; width: 36px; height: 36px; line-height: 36px; margin: 1px 3px; font-weight: 500; }
+
+.toast {
+  position: absolute; right: 72px; top: 64px; max-width: 720px;
+  padding: 20px 28px; border-radius: 30px;
+  background: rgba(14, 20, 17, 0.84); box-shadow: var(--rim), 0 24px 60px -24px rgba(0,0,0,0.7);
+  font-size: 25px; line-height: 1.35; opacity: 0; transform: translateY(-12px);
+  will-change: transform, opacity;
+  transition: opacity 0.35s ease, transform 0.5s var(--ease);
+}
+.toast.show { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01s !important; -webkit-animation: none !important; animation: none !important; }
+}

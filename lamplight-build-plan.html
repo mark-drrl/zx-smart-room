@@ -1,0 +1,571 @@
+<title>Lamplight Build Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#F1F3F5;
+  --surface:#FFFFFF;
+  --surface-2:#E6E9ED;
+  --ink:#161B21;
+  --ink-2:#4B5661;
+  --ink-3:#78838F;
+  --rule:#D2D8DE;
+  --rule-strong:#B7C0C9;
+  --accent:#A9640F;
+  --accent-bright:#C9801F;
+  --accent-soft:#F5E7D2;
+  --code-bg:#14181E;
+  --code-ink:#D6DCE3;
+  --code-ink-2:#8794A2;
+  --code-key:#E8A33D;
+  --code-str:#8FBF9F;
+  --code-rule:#2A313A;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#11141A;
+    --surface:#181C23;
+    --surface-2:#212831;
+    --ink:#E5E9EE;
+    --ink-2:#A5B0BB;
+    --ink-3:#7C8794;
+    --rule:#2B323B;
+    --rule-strong:#3D4650;
+    --accent:#E8A33D;
+    --accent-bright:#F2B961;
+    --accent-soft:#332815;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#11141A;
+  --surface:#181C23;
+  --surface-2:#212831;
+  --ink:#E5E9EE;
+  --ink-2:#A5B0BB;
+  --ink-3:#7C8794;
+  --rule:#2B323B;
+  --rule-strong:#3D4650;
+  --accent:#E8A33D;
+  --accent-bright:#F2B961;
+  --accent-soft:#332815;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Newsreader",Georgia,"Times New Roman",serif;
+  font-size:17.5px;
+  line-height:1.62;
+  margin:0;
+  padding:0 24px 96px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:940px;margin:0 auto;}
+.prose{max-width:66ch;}
+
+header.top{
+  position:relative;
+  padding:64px 0 40px;
+  border-bottom:1px solid var(--rule);
+  margin-bottom:48px;
+}
+header.top::before{
+  content:"";
+  position:absolute;
+  top:-24px;left:-10%;
+  width:60%;height:220px;
+  background:radial-gradient(ellipse at 30% 0%, var(--accent-soft) 0%, transparent 68%);
+  opacity:.85;
+  pointer-events:none;
+  z-index:0;
+}
+header.top > *{position:relative;z-index:1;}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;
+  font-weight:500;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin:0 0 18px;
+}
+h1{
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:800;
+  font-size:clamp(38px,6.2vw,60px);
+  line-height:1.02;
+  letter-spacing:-.025em;
+  text-wrap:balance;
+  margin:0 0 18px;
+}
+.dek{
+  font-size:20px;
+  color:var(--ink-2);
+  max-width:56ch;
+  margin:0 0 34px;
+}
+.glance{
+  display:flex;
+  flex-wrap:wrap;
+  gap:0;
+  border:1px solid var(--rule);
+  border-radius:3px;
+  background:var(--surface);
+  overflow:hidden;
+  margin:0;
+}
+.glance div{
+  flex:1 1 150px;
+  padding:14px 18px;
+  border-right:1px solid var(--rule);
+}
+.glance div:last-child{border-right:none;}
+.glance dt{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 5px;
+}
+.glance dd{
+  margin:0;
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:700;font-size:17px;
+  font-variant-numeric:tabular-nums;
+}
+
+section{margin-bottom:56px;}
+h2{
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:700;
+  font-size:27px;
+  letter-spacing:-.015em;
+  line-height:1.18;
+  text-wrap:balance;
+  margin:0 0 6px;
+}
+h3{
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:600;
+  font-size:18px;
+  letter-spacing:-.005em;
+  margin:32px 0 8px;
+}
+.sub{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);
+  margin:0 0 22px;
+}
+p{margin:0 0 16px;}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;}
+a:hover{color:var(--accent-bright);}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px;}
+strong{font-weight:600;color:var(--ink);}
+code{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:.86em;
+  background:var(--surface-2);
+  padding:1px 5px;
+  border-radius:3px;
+}
+ul,ol{margin:0 0 16px;padding-left:22px;}
+li{margin-bottom:7px;}
+
+.phase{
+  display:grid;
+  grid-template-columns:56px 1fr;
+  gap:20px;
+  padding:22px 0;
+  border-top:1px solid var(--rule);
+}
+.phase:last-of-type{border-bottom:1px solid var(--rule);}
+.pnum{
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:800;
+  font-size:28px;
+  line-height:1;
+  color:var(--accent);
+  font-variant-numeric:tabular-nums;
+  padding-top:2px;
+}
+.phase h3{margin:0 0 4px;font-size:19px;}
+.phase p{margin:0;color:var(--ink-2);font-size:16.5px;}
+.pcost{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);display:block;margin-top:7px;
+}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--surface);}
+table{border-collapse:collapse;width:100%;min-width:640px;}
+th{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);
+  text-align:left;
+  padding:12px 16px;
+  border-bottom:1px solid var(--rule-strong);
+  white-space:nowrap;
+}
+th.cost{text-align:right;}
+td{
+  padding:14px 16px;
+  border-bottom:1px solid var(--rule);
+  font-size:16px;
+  vertical-align:top;
+}
+tbody tr:last-child td{border-bottom:none;}
+td.part{font-weight:500;white-space:nowrap;}
+td.why{color:var(--ink-2);font-size:15.5px;}
+td.cost{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  text-align:right;
+  font-size:15px;
+}
+tr.total td{
+  border-top:2px solid var(--rule-strong);
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:700;
+  background:var(--surface-2);
+}
+tr.total td.cost{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600;}
+
+pre{
+  background:var(--code-bg);
+  color:var(--code-ink);
+  border:1px solid var(--code-rule);
+  border-radius:3px;
+  padding:18px 20px;
+  overflow-x:auto;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:13.5px;
+  line-height:1.62;
+  margin:0 0 12px;
+}
+pre code{background:none;padding:0;font-size:inherit;color:inherit;}
+.k{color:var(--code-key);}
+.s{color:var(--code-str);}
+.c{color:var(--code-ink-2);font-style:italic;}
+.caption{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin:26px 0 8px;
+}
+
+.gotcha{
+  border-left:3px solid var(--accent);
+  background:var(--surface);
+  padding:16px 20px;
+  margin:0 0 12px;
+  border-radius:0 3px 3px 0;
+  max-width:70ch;
+}
+.gotcha h4{
+  font-family:"Archivo",system-ui,sans-serif;
+  font-weight:600;font-size:16px;
+  margin:0 0 5px;
+}
+.gotcha p{margin:0;color:var(--ink-2);font-size:16px;}
+
+.note{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:3px;
+  padding:18px 22px;
+  margin:24px 0 0;
+}
+.note p:last-child{margin-bottom:0;}
+
+footer{
+  border-top:1px solid var(--rule);
+  padding-top:22px;
+  margin-top:64px;
+  color:var(--ink-3);
+  font-size:15px;
+}
+
+@media (max-width:600px){
+  body{padding:0 18px 64px;font-size:17px;}
+  .phase{grid-template-columns:40px 1fr;gap:14px;}
+  .pnum{font-size:23px;}
+  .glance div{flex-basis:50%;border-bottom:1px solid var(--rule);}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important;transition:none !important;}
+}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Smart room &middot; build plan</p>
+  <h1>Lamplight</h1>
+  <p class="dek">A lamp-lit room that turns itself on when you walk in &mdash; built on Home Assistant, on a budget, with nothing screwed into a wall.</p>
+  <dl class="glance">
+    <div><dt>Budget</dt><dd>~$129</dd></div>
+    <div><dt>Build time</dt><dd>One weekend</dd></div>
+    <div><dt>Wiring</dt><dd>None</dd></div>
+    <div><dt>Skill</dt><dd>Some YAML</dd></div>
+  </dl>
+</header>
+
+<section class="prose">
+  <h2>Why lamps make this easier</h2>
+  <p class="sub">The constraint is an advantage</p>
+  <p>Most smart-lighting guides assume you are replacing a ceiling fixture or a wall switch, which means breakers, landlords, and a real chance of doing it wrong. You have none of that. Lamps plug into a socket and take a standard bulb, so the entire lighting layer is <strong>screw in a bulb, done</strong>.</p>
+  <p>You also get something the overhead-light crowd does not: lamps are already the warm, low, pooled light that people spend money trying to fake. Once they are on a dimmer that knows what time it is, the room does the thing you actually want automatically &mdash; bright and neutral at 2pm, twenty percent and candle-warm at midnight.</p>
+</section>
+
+<section>
+  <h2>The shape of it</h2>
+  <p class="sub">Three layers, in this order</p>
+  <div class="prose">
+    <p>Almost everyone starts by buying a gadget and ends up with four apps that cannot talk to each other. Build the layers in order instead.</p>
+  </div>
+
+  <div class="phase">
+    <div class="pnum">1</div>
+    <div>
+      <h3>A brain</h3>
+      <p><strong>Home Assistant.</strong> Free, open source, runs entirely on your own hardware &mdash; no subscription, no cloud account, and it keeps working when the internet does not. This is the piece that makes every other brand cooperate.</p>
+      <span class="pcost">~$60 &middot; used mini PC, or $0 if you have an old machine</span>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pnum">2</div>
+    <div>
+      <h3>A radio</h3>
+      <p><strong>Zigbee</strong>, via a USB stick in the brain. Battery sensors last a year or two instead of a week, devices cost a fraction of the Wi-Fi equivalents, and nothing routes through a company's server.</p>
+      <span class="pcost">~$30 &middot; dongle plus one cable you must not skip</span>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pnum">3</div>
+    <div>
+      <h3>The things themselves</h3>
+      <p>A door sensor and two bulbs. That is the entire first build. Presence sensing and a voice puck come later &mdash; they are better purchases once you know how you actually move through the room.</p>
+      <span class="pcost">~$39 &middot; sensor plus two tunable-white bulbs</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Start tonight for nothing</h2>
+  <p class="sub">Before you spend a cent</p>
+  <div class="prose">
+    <p>Install Home Assistant on your Windows machine &mdash; Docker or a VirtualBox VM, both are documented on the <a href="https://www.home-assistant.io/installation/">Home Assistant installation page</a>. It will not control anything yet, but you will spend an hour inside the UI, build a fake automation, and find out whether you like working in it. That is a free answer to the only question that matters before buying hardware.</p>
+    <p>Do not keep it there long term, though. Your PC sleeps and reboots, and a room whose lights depend on that is worse than a room with an ordinary light switch.</p>
+  </div>
+</section>
+
+<section>
+  <h2>The list</h2>
+  <p class="sub">Phase one &middot; everything you need</p>
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>Part</th><th>What to get</th><th>Why this one</th><th class="cost">Ballpark</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="part">Brain</td>
+        <td>Used Lenovo ThinkCentre Tiny, Dell OptiPlex Micro, or HP EliteDesk Mini</td>
+        <td class="why">Faster than a Raspberry Pi 5, cheaper than a Raspberry Pi 5, and silent. Any i3 or i5 with 8&nbsp;GB is already overkill. Free if you have an old laptop sitting around.</td>
+        <td class="cost">$50&ndash;75</td>
+      </tr>
+      <tr>
+        <td class="part">Zigbee radio</td>
+        <td>SONOFF ZBDongle-E, or ZBDongle-P</td>
+        <td class="why">The community default. Works with the ZHA integration built into Home Assistant, so there is no extra software to install.</td>
+        <td class="cost">$22&ndash;28</td>
+      </tr>
+      <tr>
+        <td class="part">USB extension</td>
+        <td>Any USB 2.0 extension cable, 1&ndash;2&nbsp;m</td>
+        <td class="why">Not optional &mdash; see the gotchas below. Plugged straight into the PC, your Zigbee range collapses to about a metre.</td>
+        <td class="cost">$6</td>
+      </tr>
+      <tr>
+        <td class="part">Door sensor</td>
+        <td>Aqara Door &amp; Window Sensor, or SONOFF SNZB-04</td>
+        <td class="why">Stick-on magnet, roughly two-year battery. The Aqara needs no Aqara hub when you pair it straight to your own dongle.</td>
+        <td class="cost">$10&ndash;17</td>
+      </tr>
+      <tr>
+        <td class="part">Bulbs &times;2</td>
+        <td>IKEA tunable-white Zigbee bulbs, or Third Reality / Innr equivalents</td>
+        <td class="why">Get <em>tunable white</em>, not plain dimmable white &mdash; the warm-at-night behaviour is the entire point. Full colour is a nice-to-have and costs more.</td>
+        <td class="cost">$20&ndash;26</td>
+      </tr>
+      <tr class="total">
+        <td>Total</td>
+        <td colspan="2">Leaves roughly $20 of headroom under $150</td>
+        <td class="cost">~$129</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note prose">
+    <p><strong>Check your lamps before ordering bulbs.</strong> Two things can rule a lamp out: an integrated LED with no removable bulb, or an unusual base. Match the base to where you are &mdash; E26 in the US, E27 across most of Europe and Asia, B22 bayonet in the UK and parts of the Commonwealth.</p>
+    <p>If a lamp fails either test, use a <strong>Zigbee smart plug</strong> instead, around $12. You lose dimming and colour temperature, since it is on/off only, but the door automation works exactly the same.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Wiring it up</h2>
+  <p class="sub">Saturday afternoon, in order</p>
+  <div class="prose">
+    <ol>
+      <li>Flash <strong>Home Assistant OS</strong> to the mini PC's drive and boot from it. Bare metal, not Windows underneath &mdash; it is a purpose-built appliance OS and it handles its own updates.</li>
+      <li>Open <code>homeassistant.local:8123</code> from your PC, create an account, and set your location so sunset times are correct.</li>
+      <li>Plug the Zigbee dongle in <strong>via the extension cable</strong>. Home Assistant will discover it and offer to set up ZHA. Accept.</li>
+      <li>Pair the two bulbs first. Mains-powered Zigbee devices act as repeaters, so they build the mesh that the battery door sensor will lean on.</li>
+      <li>Pair the door sensor, then stick it on. The magnet and the body need to sit within roughly 15&nbsp;mm of each other when the door is shut.</li>
+      <li>Make a group: <strong>Settings &rarr; Devices &amp; Services &rarr; Helpers &rarr; Create Helper &rarr; Group &rarr; Light group</strong>. Put both bulbs in it and call it <code>Bedroom Lamps</code>. Every automation below targets the group, so adding a third lamp later needs no edits.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2>The automations</h2>
+  <p class="sub">Paste into the YAML editor, swap the entity names</p>
+  <div class="prose">
+    <p>In each automation editor, use the three-dot menu &rarr; <strong>Edit in YAML</strong>. Replace <code>binary_sensor.bedroom_door_contact</code>, <code>light.bedroom_lamps</code>, and <code>person.mark</code> with whatever yours are actually called.</p>
+  </div>
+
+  <p class="caption">1 &middot; Door opens &rarr; lamps on, at the right warmth</p>
+<pre><code><span class="k">alias</span>: Door opens - lamps on
+<span class="k">description</span>: Light the room on entry. Dim and candle-warm after 22:00.
+<span class="k">triggers</span>:
+  - <span class="k">trigger</span>: state
+    <span class="k">entity_id</span>: binary_sensor.bedroom_door_contact
+    <span class="k">to</span>: <span class="s">"on"</span>          <span class="c"># "on" means open</span>
+<span class="k">conditions</span>:
+  - <span class="k">condition</span>: state
+    <span class="k">entity_id</span>: light.bedroom_lamps
+    <span class="k">state</span>: <span class="s">"off"</span>         <span class="c"># don't stomp on lights you set by hand</span>
+<span class="k">actions</span>:
+  - <span class="k">action</span>: light.turn_on
+    <span class="k">target</span>:
+      <span class="k">entity_id</span>: light.bedroom_lamps
+    <span class="k">data</span>:
+      <span class="k">brightness_pct</span>: <span class="s">"{{ (20 if now().hour &gt;= 22 or now().hour &lt; 7 else 75) | int }}"</span>
+      <span class="k">kelvin</span>: <span class="s">"{{ (2200 if now().hour &gt;= 22 or now().hour &lt; 7 else 3500) | int }}"</span>
+      <span class="k">transition</span>: 1
+<span class="k">mode</span>: single</code></pre>
+
+  <p class="caption">2 &middot; Phone leaves home &rarr; everything off</p>
+<pre><code><span class="k">alias</span>: I left home - lamps off
+<span class="k">description</span>: Free presence detection, no extra hardware.
+<span class="k">triggers</span>:
+  - <span class="k">trigger</span>: state
+    <span class="k">entity_id</span>: person.mark
+    <span class="k">from</span>: home
+    <span class="k">to</span>: not_home
+<span class="k">actions</span>:
+  - <span class="k">action</span>: light.turn_off
+    <span class="k">target</span>:
+      <span class="k">entity_id</span>: light.bedroom_lamps
+<span class="k">mode</span>: single</code></pre>
+  <div class="prose">
+    <p>This one needs the free <strong>Home Assistant companion app</strong> on your phone, with location permission granted. That app is also your voice control for now &mdash; it has an assistant built in, so you get "turn on the lamps" from day one without buying a speaker.</p>
+  </div>
+
+  <p class="caption">3 &middot; Sunset &rarr; the room warms down on its own</p>
+<pre><code><span class="k">alias</span>: Sunset warm-down
+<span class="k">description</span>: Half an hour before sunset, ease into evening light.
+<span class="k">triggers</span>:
+  - <span class="k">trigger</span>: sun
+    <span class="k">event</span>: sunset
+    <span class="k">offset</span>: <span class="s">"-00:30:00"</span>
+<span class="k">conditions</span>:
+  - <span class="k">condition</span>: state
+    <span class="k">entity_id</span>: light.bedroom_lamps
+    <span class="k">state</span>: <span class="s">"on"</span>
+<span class="k">actions</span>:
+  - <span class="k">action</span>: light.turn_on
+    <span class="k">target</span>:
+      <span class="k">entity_id</span>: light.bedroom_lamps
+    <span class="k">data</span>:
+      <span class="k">brightness_pct</span>: 45
+      <span class="k">kelvin</span>: 2700
+      <span class="k">transition</span>: 300   <span class="c"># five-minute fade, so you never catch it happening</span>
+<span class="k">mode</span>: single</code></pre>
+  <div class="prose">
+    <p>Once you are comfortable, replace this third one with the <strong>Adaptive Lighting</strong> custom integration, installed through HACS. It shifts colour temperature continuously across the whole day rather than in one step, and for a room lit entirely by lamps it is the best free upgrade available.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Things that will bite you</h2>
+  <p class="sub">Every one of these is a real evening lost</p>
+
+  <div class="gotcha">
+    <h4>USB 3 murders Zigbee</h4>
+    <p>USB 3 ports, and the SSDs plugged into them, leak noise across the same 2.4&nbsp;GHz band Zigbee uses. A dongle plugged directly into the back of a PC often ends up with a range of about one metre. The $6 extension cable, with the dongle hanging in open air, is the fix &mdash; and it is why that cable is on the parts list rather than an afterthought.</p>
+  </div>
+  <div class="gotcha">
+    <h4>The lamp's own switch has to stay on</h4>
+    <p>A smart bulb with its power cut is just a bulb. Get in the habit of leaving lamp switches on and controlling everything through Home Assistant. If a switch is easy to knock by accident, tape it. A cheap Zigbee button on the nightstand scratches the "I want to press something" itch properly.</p>
+  </div>
+  <div class="gotcha">
+    <h4>Do not auto-off on a timer</h4>
+    <p>The obvious next automation is "lights off ten minutes after the door closes." Do not build it. It turns the lights off on you while you are sitting perfectly still at your desk, and it is the most common reason people rip this stuff back out. Turning off when you <em>leave home</em> is safe; turning off on <em>stillness</em> needs a presence sensor, which is phase two.</p>
+  </div>
+  <div class="gotcha">
+    <h4>Battery sensors look broken when they are fine</h4>
+    <p>A door sensor reports only when its state changes, so "last updated" can read as hours ago. That is correct behaviour, not a dying battery.</p>
+  </div>
+  <div class="gotcha">
+    <h4>These prices are ballpark</h4>
+    <p>The figures here are rough guides for sizing the build, not quotes. Used mini PC prices in particular swing hard by model and region. Check current listings before committing.</p>
+  </div>
+</section>
+
+<section>
+  <h2>What comes after</h2>
+  <p class="sub">Once phase one has run for a week</p>
+
+  <div class="phase">
+    <div class="pnum">4</div>
+    <div>
+      <h3>Presence, so the lights stop being wrong</h3>
+      <p>An <strong>mmWave presence sensor</strong> &mdash; Everything Presence One, or an Aqara FP2 &mdash; detects breathing-level motion, so it knows you are in the room even when you have not moved in twenty minutes. This is the upgrade that turns "clever" into "invisible", and it is the right thing to buy next.</p>
+      <span class="pcost">~$50</span>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pnum">5</div>
+    <div>
+      <h3>An actual wake word</h3>
+      <p><strong>Home Assistant Voice Preview Edition</strong> is a purpose-built mic-and-speaker puck that runs the whole pipeline locally: wake word, speech to text, intent, speech back. The wake word is a configuration field, so yes &mdash; it can genuinely be "Jarvis".</p>
+      <span class="pcost">~$59</span>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pnum">6</div>
+    <div>
+      <h3>The part that makes it feel like Jarvis</h3>
+      <p>Out of the box, voice control is a spoken remote: it understands "turn on the desk lamp" and very little else. Home Assistant lets you set an <strong>LLM as the conversation agent</strong>, and ships an Anthropic integration for exactly this. Then "it's a bit dim in here" and "I'm heading to bed" work, because something is interpreting intent rather than matching phrases. That gap is the whole difference between a voice remote and an assistant.</p>
+      <span class="pcost">No hardware &middot; API usage billed per request</span>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="pnum">7</div>
+    <div>
+      <h3>Light as a material</h3>
+      <p>An ESP32 running <strong>WLED</strong> driving an addressable LED strip costs around $25 all in, and comprehensively beats any off-the-shelf strip on effects and control. Behind the desk, under the bed frame, along a shelf &mdash; this is where a lamp-lit room becomes genuinely yours.</p>
+      <span class="pcost">~$25</span>
+    </div>
+  </div>
+</section>
+
+<footer class="prose">
+  <p>Build phase one, then live with it for a full week before buying anything else. You will find that one automation you were certain you wanted is quietly annoying, and that something you never considered is the thing you use twenty times a day. That week is worth more than any parts list.</p>
+</footer>
+
+</div>
