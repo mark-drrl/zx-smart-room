@@ -125,3 +125,15 @@ def test_volume_is_capped(monkeypatch):
     assert A.set_volume(level=250) == "Volume's at 60."
     assert '<DesiredVolume>60</DesiredVolume>' in sent['args']
     assert A.set_volume(change=-20) == "Volume's at 0."
+
+
+@pytest.mark.parametrize('title, spoken', [
+    ('4K Campfire by the River - Relaxing Fireplace & Nature Sounds - Robin Birdsong  - UHD Video - 2160p',
+     'Campfire by the River'),
+    ('Cozy Fireplace | 4K HDR 60fps', 'Cozy Fireplace'),
+    ('Interstellar - Trailer - Official Warner Bros. UK', 'Interstellar'),
+    ('lofi hip hop radio 📚 beats to relax/study to', 'lofi hip hop radio beats to relax/study to'),
+    ('🔥 Cozy Fireplace', 'Cozy Fireplace'),
+])
+def test_video_titles_are_shortened_for_speech(title, spoken):
+    assert A.short_title(title) == spoken

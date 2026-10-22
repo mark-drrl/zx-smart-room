@@ -544,42 +544,62 @@ def youtube_find(query):
 
 
 YOUTUBE_APP = 'xvvl3S1TT1.TizenTubeStandalone'     # TizenTube (YouTube without ads)
+_youtube = None
+
+
+def youtube():
+    """The kept-open connection to YouTube on the TV (youtube_tv.py), or None if not linked."""
+    global _youtube
+    import youtube_tv
+    if _youtube is None and youtube_tv.linked():
+        _youtube = youtube_tv.YouTubeRemote()
+    return _youtube
+
+
+def short_title(title):
+    """What she says out loud: "4K Campfire by the River - Relaxing Fireplace & Nature Sounds |
+    UHD 2160p" -> "Campfire by the River"."""
+    t = re.split(r'\s+[-|–—:]\s+|\s*[|(\[]', title or '')[0]
+    t = re.sub(r'\b(4K|8K|HDR|UHD|HD|2160p|1080p|60fps|official( music)? video|lyrics?)\b', '', t, flags=re.I)
+    t = re.sub(r"[^\w\s&'.,!?/-]", '', t)                 # emojis and symbols aren't spoken
+    t = ' '.join(t.split()).strip(' -|,.')
+    return t if len(t) >= 3 else (title or '')[:60]
 
 
 def youtube_play(query):
-    """Search YouTube and play the top result in TizenTube, via YouTube's "Link with TV code"
-    connection (youtube_tv.py). TizenTube has to be open to receive it, so it's opened first."""
-    import youtube_tv
-    video = youtube_find(query)
-    if not video:
-        return f'Nothing found on YouTube for "{query}".'
+    """Search YouTube and play the top result in TizenTube. The search runs while TizenTube opens
+    and the connection is made; the video is sent as soon as YouTube answers, not after a fixed
+    wait. Measured on an open connection: search ~1.6 s + send ~1.7 s."""
+    from concurrent.futures import ThreadPoolExecutor
     if tv_is_off():
         woke = turn_on()
         if failed(woke):
             return woke
-    if not youtube_tv.linked():
-        tv_open(YOUTUBE_APP)
+    yt = youtube()
+    with ThreadPoolExecutor(1) as pool:
+        search = pool.submit(youtube_find, query)
+        opening = not tv_showing(YOUTUBE_APP, 0)
+        if opening:
+            tv_open(YOUTUBE_APP)
+        video = search.result()
+    if not video:
+        return f'Nothing found on YouTube for "{query}".'
+    if yt is None:
         return "YouTube is open, but I can't pick videos until it's linked with a TV code."
-    if not tv_showing(YOUTUBE_APP, 0):
-        tv_open(YOUTUBE_APP)
-        tv_showing(YOUTUBE_APP, 8)
-        time.sleep(3)                                # let YouTube finish loading before it's sent a video
     try:
-        youtube_tv.play(video['id'])
+        yt.play(video['id'], attempts=8 if opening else 2)   # a just-opened app takes a few seconds to answer
     except Exception as e:
         log.info(f'YouTube link failed: {e}')
         return "YouTube is open, but it didn't take the video. Try again in a moment."
-    title = video.get('title') or query
-    by = f' by {video["channel"]}' if video.get('channel') else ''
-    return f'Playing "{title}"{by} on YouTube.'
+    return f'Playing {short_title(video.get("title") or query)}.'
 
 
 def youtube_control(action):
-    import youtube_tv
-    if not youtube_tv.linked():
+    yt = youtube()
+    if yt is None:
         return "YouTube isn't linked yet."
     try:
-        youtube_tv.control(action)
+        yt.control(action)
     except Exception as e:
         log.info(f'YouTube control failed: {e}')
         return "YouTube didn't respond."
@@ -1124,6 +1144,15 @@ def main():
                 lambda: youtube_play(q), f'The TV is starting up (about 30 seconds); "{q}" will play on YouTube once it is on.'),
         }, memory)
         log.info(f'conversation on: Claude {BRAIN_MODEL}')
+
+        def warm_up_youtube():           # first video request shouldn't pay for loading and connecting
+            try:
+                import yt_dlp  # noqa: F401
+                if youtube():
+                    youtube().warm_up()
+            except Exception as e:
+                log.info(f'YouTube warm-up skipped: {e}')
+        threading.Thread(target=warm_up_youtube, daemon=True).start()
     else:
         log.info('conversation off: add ANTHROPIC_API_KEY to corelynx.env to talk with Claude')
     frames = queue.Queue()
