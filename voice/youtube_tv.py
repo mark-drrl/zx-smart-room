@@ -16,6 +16,7 @@ import threading
 
 import keyring
 from pyytlounge import YtLoungeApi
+from pyytlounge.event_listener import EventListener
 from pyytlounge.models import AUTH_VERSION_V1, AuthState
 
 SERVICE = 'zx-smart-room'
@@ -41,13 +42,28 @@ def linked():
     return bool(keyring.get_password(SERVICE, KEY))
 
 
+class _NowPlaying(EventListener):
+    """Remembers which video YouTube on the TV says it's playing (pushed by the TV as it changes)."""
+
+    def __init__(self):
+        self.video_id = None
+
+    async def now_playing_changed(self, event):
+        if event.video_id:
+            self.video_id = event.video_id
+
+
 class YouTubeRemote:
-    """One long-lived connection to YouTube on the TV, on its own event loop thread."""
+    """One long-lived connection to YouTube on the TV, on its own event loop thread. It also
+    listens to what the TV reports, so a video can be confirmed as actually playing: one sent
+    while TizenTube was coming back from the background was lost, and the old video carried on."""
 
     def __init__(self):
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
         self.api = None
+        self.now = _NowPlaying()
+        self.listening = None
 
     def _run(self, coro, timeout=20):
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
@@ -59,8 +75,9 @@ class YouTubeRemote:
             except Exception:
                 pass
             self.api = None
+            self.listening = None                         # the old listener ends with its connection
         if self.api is None:
-            self.api = YtLoungeApi('Zephyr')
+            self.api = YtLoungeApi('Zephyr', event_listener=self.now)
             await self.api.__aenter__()
             _load(self.api)
         if self.api.connected():
@@ -72,6 +89,33 @@ class YouTubeRemote:
             if not await self.api.connect():
                 raise RuntimeError('YouTube on the TV is not answering')
         _save(self.api)                                   # keep refreshed tokens
+        if self.listening is None or self.listening.done():
+            self.listening = asyncio.ensure_future(self._listen())
+
+    async def _listen(self):
+        try:
+            await self.api.subscribe()
+        except Exception:
+            pass
+
+    async def _play_confirmed(self, video_id, attempts):
+        """Send the video, then wait for the TV to say it's playing it; resend if it doesn't."""
+        last = None
+        for i in range(attempts):
+            try:
+                await self._connect(fresh=i > 0)
+                await self.api.play_video(video_id)
+                for _ in range(10):                       # up to ~3 s for the TV to confirm
+                    await asyncio.sleep(0.3)
+                    if self.now.video_id == video_id:
+                        return True
+                    if _ == 4:
+                        await self.api.get_now_playing()
+                last = 'the TV kept playing something else'
+            except Exception as e:
+                last = e
+                await asyncio.sleep(1.0)
+        raise RuntimeError(f'YouTube on the TV did not switch videos: {last}')
 
     async def _do(self, action, *args, attempts=1):
         """Runs an action; if the connection went stale (TizenTube was closed), reconnects and
@@ -91,8 +135,14 @@ class YouTubeRemote:
         """Connect in the background so the first request doesn't pay for it."""
         asyncio.run_coroutine_threadsafe(self._connect(), self.loop)
 
-    def play(self, video_id, attempts=2):
-        self._run(self._do('play_video', video_id, attempts=attempts), timeout=8 + 4 * attempts)
+    def play(self, video_id, confirm=False, attempts=3):
+        """confirm: wait for the TV to report the new video and resend if it doesn't - needed when
+        TizenTube was just brought back from the background. Without it (app already on screen)
+        a switch takes ~1.7 s; the TV's own confirmation is slow and sometimes never arrives."""
+        if confirm:
+            self._run(self._play_confirmed(video_id, attempts), timeout=10 + 5 * attempts)
+        else:
+            self._run(self._do('play_video', video_id, attempts=2), timeout=20)
 
     def control(self, action):
         name = {'pause': 'pause', 'resume': 'play', 'next': 'next', 'previous': 'previous', 'skip_ad': 'skip_ad'}[action]

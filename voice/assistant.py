@@ -581,13 +581,14 @@ def youtube_play(query):
         opening = not tv_showing(YOUTUBE_APP, 0)
         if opening:
             tv_open(YOUTUBE_APP)
-        video = search.result()
+            tv_showing(YOUTUBE_APP, 8)                 # on screen first: a video sent while it's still
+        video = search.result()                        # coming back from the background gets lost
     if not video:
         return f'Nothing found on YouTube for "{query}".'
     if yt is None:
         return "YouTube is open, but I can't pick videos until it's linked with a TV code."
     try:
-        yt.play(video['id'], attempts=8 if opening else 2)   # a just-opened app takes a few seconds to answer
+        yt.play(video['id'], confirm=opening)        # brought from the background: confirm it switched
     except Exception as e:
         log.info(f'YouTube link failed: {e}')
         return "YouTube is open, but it didn't take the video. Try again in a moment."
