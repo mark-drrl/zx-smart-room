@@ -36,9 +36,11 @@ FRAME = 1280                      # 80 ms, what openWakeWord expects
 WAKE_THRESHOLD = 0.5              # "Hey Jarvis" model (only used if the name is Jarvis): sure straight away
 SOFT_THRESHOLD = 0.15             # "Hey Jarvis" model, lower scores: confirm with the transcript first
 PREROLL_FRAMES = 25               # keep ~2 s from before the trigger: "<name>, go home" in one breath fits whole
-MAX_COMMAND_S = 7.0
+MAX_COMMAND_S = 20.0              # long directions fit (9 s cut sentences off on 22 Oct)
 END_SILENCE_S = 0.6               # pause that ends a sentence
 QUICK_END_S = 0.3                 # ...or this, once the live transcript shows a finished sentence
+LONG_TALK_S = 2.5                 # talking longer than this = giving directions: allow thinking pauses
+LONG_PAUSE_S = 1.0                # ...so it takes this much silence to end, and no quick end
 NO_SPEECH_GIVEUP_S = 3.0
 DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15 s
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
@@ -378,7 +380,8 @@ def parse(text):
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
-                                       r'search|find|watch|episode|movie|pause|resume|channel|input|source)\b', t):
+                                       r'search|find|watch|episode|movie|pause|resume|channel|input|source|'
+                                       r'video|videos|need|want|something|anything|that|which)\b', t):
         return None
     tv = r'(tv|television|telly|screen|frame)'
     # Other devices (the Smart Room lamps etc.) are not the TV: leave those for later.
@@ -1061,7 +1064,8 @@ class LiveSession:
     def dangling(self):
         """The words so far stop mid-thought: "...volume to", "...play some"."""
         t = ' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip().lower()
-        return bool(re.search(r"\b(to|at|the|a|an|and|on|for|of|uh|um|like|is|my|some|with|in|play|set|put|turn)[,]?$", t))
+        return bool(re.search(r"\b(to|at|the|a|an|and|on|for|of|uh|um|like|is|my|some|with|in|play|set|put|turn|"
+                              r"that|which|who|so|but|because|or|if|when|about|from|into|than|just|maybe)[,]?$", t))
 
     def sounds_finished(self):
         """The live transcript ends a sentence ("...volume to eight.") with words after the name.
@@ -1460,7 +1464,7 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
     vad.reset()
     for f in preroll[-12:]:                              # ~1 s of context so the detector is settled
         vad.accept_waveform(f.astype(np.float32) / 32768)
-    heard_speech, quiet, skipped, reason = False, 0, 0, 'time limit'
+    heard_speech, quiet, skipped, reason, talked = False, 0, 0, 'time limit', 0
     for n in range(1, int((MAX_COMMAND_S + 2) / sec) + 1):
         f = frames.get()
         command.append(f)
@@ -1472,14 +1476,17 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
         vad.accept_waveform(f.astype(np.float32) / 32768)
         if vad.is_speech_detected():
             heard_speech, quiet = True, 0
+            talked += 1
         elif heard_speech:
             quiet += 1                                   # each counts on top of the detector's own 0.25 s
-            if quiet * sec >= END_SILENCE_S - 0.25:
-                if dangling and dangling() and quiet * sec < 1.3:
-                    continue                             # "...volume to" - you're still thinking
+            long_talk = talked * sec > LONG_TALK_S       # directions, not a quick command
+            end_after = LONG_PAUSE_S if long_talk else END_SILENCE_S
+            if quiet * sec >= end_after - 0.25:
+                if dangling and dangling() and quiet * sec < 1.5:
+                    continue                             # "...a video that" - you're still thinking
                 reason = 'pause'
                 break
-            if quiet * sec >= QUICK_END_S - 0.25 and finished and finished():
+            if not long_talk and quiet * sec >= QUICK_END_S - 0.25 and finished and finished():
                 reason = 'sentence done'
                 break
         elif (n - skipped) * sec > giveup:

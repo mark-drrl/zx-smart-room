@@ -33,6 +33,8 @@ def test_opening_an_app():
     'play September by Earth Wind and Fire',
     'turn on the lamp',                                             # not the TV
     'what should I watch tonight',
+    'need a YouTube video that plays',                             # wants something specific
+    'I want something on YouTube',
 ])
 def test_everything_else_goes_to_claude(said):
     assert A.parse(said) is None
@@ -108,6 +110,8 @@ def _session(text):
 def test_end_of_turn_waits_for_unfinished_thoughts():
     assert _session('Zephyr volume to').dangling()
     assert _session('play some').dangling()
+    assert _session('I need a YouTube video that').dangling()
+    assert _session('something calm, but').dangling()
     assert not _session('Zephyr, volume to eight.').dangling()
 
 
@@ -137,3 +141,35 @@ def test_volume_is_capped(monkeypatch):
 ])
 def test_video_titles_are_shortened_for_speech(title, spoken):
     assert A.short_title(title) == spoken
+
+
+def test_long_directions_are_not_cut_off():
+    """Two seconds of talking, a 0.5 s thinking pause, more talking: it must keep recording.
+    A quick command followed by the same pause ends straight away."""
+    import queue
+    sec = A.FRAME / A.RATE
+
+    class FakeVAD:
+        def __init__(self, pattern): self.pattern, self.i = pattern, -1
+        def reset(self): pass
+        def accept_waveform(self, x): self.i += 1
+        def is_speech_detected(self): return self.pattern[min(self.i, len(self.pattern) - 1)]
+
+    def frames_for(pattern):
+        q = queue.Queue()
+        for _ in pattern:
+            q.put(A.np.zeros(A.FRAME, A.np.int16))
+        return q
+
+    talk = lambda s: [True] * int(s / sec)
+    pause = lambda s: [False] * int(s / sec)
+    directions = talk(3.0) + pause(0.5) + talk(2.0) + pause(2.0)
+    A._vad = FakeVAD(directions)
+    cmd, _ = A.record_command(frames_for(directions), [], 300.0, finished=lambda: True)
+    assert len(cmd) * sec > 5.0                      # heard the part after the thinking pause
+
+    quick = talk(1.0) + pause(2.0)
+    A._vad = FakeVAD(quick)
+    cmd, _ = A.record_command(frames_for(quick), [], 300.0, finished=lambda: True)
+    assert len(cmd) * sec < 1.4                      # short command: ends fast
+    A._vad = None
