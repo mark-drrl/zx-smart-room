@@ -14,6 +14,7 @@ import queue
 import re
 import socket
 import ssl
+import statistics
 import sys
 import threading
 import time
@@ -41,6 +42,43 @@ END_SILENCE_S = 0.6               # pause that ends a sentence
 QUICK_END_S = 0.3                 # ...or this, once the live transcript shows a finished sentence
 LONG_TALK_S = 2.5                 # talking longer than this = giving directions: allow thinking pauses
 LONG_PAUSE_S = 1.0                # ...so it takes this much silence to end, and no quick end
+
+
+class Rhythm:
+    """How you talk, learned as you go: the short gaps between your words (not the end of a
+    sentence) and how many words a second you say. Fast talkers get quicker replies and a slightly
+    quicker voice back; slower, thoughtful speech gets more room. Starts from the fixed values."""
+
+    def __init__(self):
+        self.gaps = deque(maxlen=40)      # seconds of silence inside a sentence
+        self.rates = deque(maxlen=10)     # words per second of talking
+
+    def gap(self):
+        return statistics.median(self.gaps) if len(self.gaps) >= 4 else None
+
+    def end_silence(self, long_talk):
+        """Silence that ends your turn: about twice your usual mid-sentence gap."""
+        g = self.gap()
+        if g is None:
+            return LONG_PAUSE_S if long_talk else END_SILENCE_S
+        if long_talk:
+            return min(1.2, max(0.6, g * 2.4))
+        return min(0.8, max(0.45, g * 1.8))
+
+    def note_rate(self, words, talk_s):
+        if words >= 3 and talk_s >= 0.8:
+            self.rates.append(words / talk_s)
+
+    def voice_speed(self):
+        """Her speaking speed: 1.0 for an average talker (~2.5 words/s), up to 1.12 if you're quick."""
+        if not self.rates:
+            return 1.0
+        wps = statistics.median(self.rates)
+        return round(min(1.12, max(0.95, 1.0 + (wps - 2.5) * 0.08)), 2)
+
+
+RHYTHM = Rhythm()
+LAST_TALK_S = [0.0]                   # seconds of actual speech in the last recording
 NO_SPEECH_GIVEUP_S = 3.0
 DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15 s
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
@@ -824,7 +862,8 @@ class ElevenLabs:
         if time.time() < self.off_until:
             return None
         body = json.dumps({'text': sentence, 'model_id': 'eleven_flash_v2_5', 'previous_text': previous[-300:],
-                           'voice_settings': {'stability': 0.4, 'similarity_boost': 0.75, 'speed': 1.0}}).encode()
+                           'voice_settings': {'stability': 0.4, 'similarity_boost': 0.75,
+                                              'speed': RHYTHM.voice_speed()}}).encode()
         req = urllib.request.Request(self.URL.format(self.voice_id), data=body, headers={
             'xi-api-key': self.key, 'Content-Type': 'application/json', 'User-Agent': 'SmartRoom-Assistant/1.0'})
         try:
@@ -874,17 +913,19 @@ class Voice:
 
     def _make(self, sentence):
         # short replies repeat a lot ("Volume's at eight."): keep them, so they play instantly
-        hit = self.cache.get(sentence)
+        key = (sentence, RHYTHM.voice_speed())
+        hit = self.cache.get(key)
         if hit:
             return hit
         made = self.eleven.make(sentence, self.previous) if self.eleven else None
         self.previous = (self.previous + ' ' + sentence)[-300:]
         if made is None:
-            made = self.kokoro.create(sentence, voice=self.voice, speed=1.05, lang=self.lang)
+            made = self.kokoro.create(sentence, voice=self.voice, speed=round(1.05 * RHYTHM.voice_speed(), 2),
+                                      lang=self.lang)
         if len(sentence) < 60:
             if len(self.cache) > 300:
                 self.cache.clear()
-            self.cache[sentence] = made
+            self.cache[key] = made
         return made
 
     def interrupt(self):
@@ -1277,6 +1318,7 @@ def main():
             else:
                 how = 'live'
             log.info(f'transcript ({how}, {time.time() - ended:.2f} s after you stopped): "{text}"')
+            RHYTHM.note_rate(len(text.split()), LAST_TALK_S[0])
             if DIAGNOSTIC:
                 save_diag(np.concatenate(command), text)
             return text, speech
@@ -1475,12 +1517,14 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
             continue
         vad.accept_waveform(f.astype(np.float32) / 32768)
         if vad.is_speech_detected():
+            if heard_speech and quiet:
+                RHYTHM.gaps.append(quiet * sec + 0.25)   # a pause inside your sentence: learn its length
             heard_speech, quiet = True, 0
             talked += 1
         elif heard_speech:
             quiet += 1                                   # each counts on top of the detector's own 0.25 s
             long_talk = talked * sec > LONG_TALK_S       # directions, not a quick command
-            end_after = LONG_PAUSE_S if long_talk else END_SILENCE_S
+            end_after = RHYTHM.end_silence(long_talk)     # learned from how you talk
             if quiet * sec >= end_after - 0.25:
                 if dangling and dangling() and quiet * sec < 1.5:
                     continue                             # "...a video that" - you're still thinking
@@ -1492,7 +1536,9 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
         elif (n - skipped) * sec > giveup:
             reason = 'nothing said'
             break
-    log.info(f'recorded {n * sec:.1f} s, ended by {reason}')
+    LAST_TALK_S[0] = talked * sec
+    log.info(f'recorded {n * sec:.1f} s, ended by {reason}' + (
+        f' (your gaps ~{RHYTHM.gap():.2f} s)' if RHYTHM.gap() else ''))
     return command, heard_speech
 
 

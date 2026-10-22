@@ -173,3 +173,16 @@ def test_long_directions_are_not_cut_off():
     cmd, _ = A.record_command(frames_for(quick), [], 300.0, finished=lambda: True)
     assert len(cmd) * sec < 1.4                      # short command: ends fast
     A._vad = None
+    A.RHYTHM.gaps.clear(); A.RHYTHM.rates.clear()
+
+
+def test_rhythm_adapts_to_how_fast_you_talk():
+    fast, slow = A.Rhythm(), A.Rhythm()
+    assert fast.end_silence(False) == A.END_SILENCE_S and fast.voice_speed() == 1.0   # before learning
+    for _ in range(6):
+        fast.gaps.append(0.28); slow.gaps.append(0.55)
+        fast.note_rate(12, 3.0); slow.note_rate(6, 3.0)          # 4 vs 2 words a second
+    assert fast.end_silence(False) < slow.end_silence(False)     # quick talker, quicker reply
+    assert fast.end_silence(True) < slow.end_silence(True)
+    assert 0.45 <= fast.end_silence(False) and slow.end_silence(True) <= 1.2   # never extreme
+    assert fast.voice_speed() > 1.0 > slow.voice_speed() >= 0.95
