@@ -210,6 +210,7 @@
   function open(app, tile) {
     press(tile);
     if (!onTV) { toast('Preview: on the TV this opens ' + app.title + '.'); return; }
+    if (app.link) { openLink(app); return; }
     try {
       tizen.application.launch(app.tizenId, null, function (err) {
         if (err && err.name === 'NotFoundError') toast(app.title + ' isn’t installed anymore. Reinstall it from Smart Hub, or remove it from apps.js.');
@@ -217,6 +218,21 @@
       });
     } catch (e) {
       toast('Couldn’t open ' + app.title + '. Try again, or open it from Smart Hub.');
+    }
+  }
+
+  /* Your private link (set at deploy time from private/link.txt), full screen in the TV browser,
+     which gives the remote a pointer for websites. */
+  function openLink(app) {
+    var url = window.PRIVATE_LINK;
+    if (!url) { toast('No link saved yet. Paste one into frame-launcher/private/link.txt and deploy again.'); return; }
+    try {
+      tizen.application.launchAppControl(
+        new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url),
+        'org.tizen.browser', null,
+        function () { toast('Couldn’t open ' + app.title + '. Try again.'); });
+    } catch (e) {
+      toast('Couldn’t open ' + app.title + '. Try again.');
     }
   }
 

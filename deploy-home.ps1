@@ -15,6 +15,15 @@ foreach ($i in 'config.xml', 'index.html', 'icon.png', 'css', 'js', 'fonts', 'ic
     Copy-Item (Join-Path $src $i) (Join-Path $build $i) -Recurse
 }
 
+# Your private link for the Movies tile: read from private/link.txt (kept out of git) and baked
+# into this build only. Nothing is printed.
+$linkFile = Join-Path $src 'private\link.txt'
+$link = ''
+if (Test-Path $linkFile) { $link = (Get-Content $linkFile -Raw).Trim() }
+if ($link -and $link -notmatch '^https?://') { $link = 'https://' + $link }
+"window.PRIVATE_LINK = $(ConvertTo-Json $link);" | Set-Content (Join-Path $build 'js\private.js') -Encoding utf8
+if (-not $link) { Write-Host 'Movies tile: no link yet (paste one into frame-launcher\private\link.txt and deploy again).' }
+
 & $sdb connect $tv | Out-Null
 & $tizen package -t wgt -s $profile -- $build | Out-Null
 $wgt = Join-Path $build 'Home.wgt'

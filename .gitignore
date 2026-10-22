@@ -20,3 +20,7 @@ frame-launcher/media/wallpaper.mp4
 voice/chime.wav
 __pycache__/
 .claude/
+voice/samples/
+voice/wake.wav
+frame-launcher/private/
+voice/voiceprint.npz

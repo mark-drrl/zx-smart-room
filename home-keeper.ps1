@@ -8,7 +8,7 @@ $PollSeconds = 3
 $Log = Join-Path $PSScriptRoot 'home-keeper.log'
 
 # Every app on the Home screen (from frame-launcher\js\apps.js), by Smart Hub id.
-$Apps = @('111299001912','3201907018807','3201910019365','3201606009684','3201807016597',
+$Apps = @('xvvl3S1TT1.TizenTubeStandalone','3201907018807','3201910019365','3201606009684','3201807016597',
           '3201710015037','3202010022079','3202008021439')
 
 function Write-Log($msg) {

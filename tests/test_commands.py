@@ -1,0 +1,127 @@
+"""How Zephyr understands what you say: commands, stop words, modes, and what she speaks."""
+import pytest
+
+import assistant as A
+
+
+@pytest.mark.parametrize('said, expected', [
+    ('Zephyr, turn on the TV', 'turn_on'),
+    ('turn on the T V', 'turn_on'),
+    ('turn off the TV', 'turn_off'),
+    ('tv off', 'turn_off'),
+    ('good night', 'turn_off'),
+    ('turn the TV off completely', 'turn_off_fully'),
+    ('shut down the tv', 'turn_off_fully'),
+    ('go home', 'go_home'),
+    ('art mode', 'go_art'),
+    ('turn on art mode', 'go_art'),
+])
+def test_simple_tv_commands(said, expected):
+    action = A.parse(said)
+    assert action is not None and action.__name__ == expected
+
+
+def test_opening_an_app():
+    action = A.parse('open YouTube')
+    assert getattr(action, 'opens_app', False)
+    assert A.quick_ack(action, 'open YouTube') == 'Opening YouTube.'
+
+
+@pytest.mark.parametrize('said', [
+    'go to Spotify, play a song, and lower the volume to eight',   # several steps: Claude's job
+    'volume to eight',
+    'play September by Earth Wind and Fire',
+    'turn on the lamp',                                             # not the TV
+    'what should I watch tonight',
+])
+def test_everything_else_goes_to_claude(said):
+    assert A.parse(said) is None
+
+
+def test_name_is_removed_from_requests():
+    assert A.without_name('Zephyr, what time is it?') == 'what time is it'
+    assert A.without_name('Hey Zephyr') == ''
+
+
+@pytest.mark.parametrize('heard', ['Zephyr, open Spotify.', 'Zafer volume to 12.', 'Jeffrey turn on my T V.',
+                                   'Suffer. Go to Spotify.'])
+def test_name_spellings_corelynx_produces(heard):
+    assert A.NAME_LOOSE.search(heard)
+
+
+@pytest.mark.parametrize('heard', ['So, So like right now.', 'Barbara', "Sarah, what's going on?",
+                                   'enter the temple'])
+def test_chatter_is_not_her_name(heard):
+    assert not A.NAME_LOOSE.search(heard)
+
+
+@pytest.mark.parametrize('said, mode', [
+    ('Zephyr, stop listening for now', 'pause'), ('Zephyr, go dark', 'pause'), ("Don't listen.", 'pause'),
+    ('Zephyr wake up', 'resume'), ("I'm back", 'resume'),
+])
+def test_pause_and_resume(said, mode):
+    assert bool(A.PAUSE.search(said)) == (mode == 'pause')
+    assert bool(A.RESUME.search(said)) == (mode == 'resume')
+
+
+@pytest.mark.parametrize('said', ['stop', 'never mind', "that's all thanks", 'thank you', 'cancel'])
+def test_ending_a_conversation(said):
+    assert A.DONE.match(said)
+
+
+@pytest.mark.parametrize('said', ['no worries, tell me a joke', 'what should I watch tonight'])
+def test_real_questions_do_not_end_it(said):
+    assert not A.DONE.match(said)
+
+
+def test_social_mode_commands():
+    assert A.SOCIAL_ON.search('Zephyr, social mode') and not A.SOCIAL_OFF.search('Zephyr, social mode')
+    for off in ['Zephyr, stop social mode', 'end social mode', 'social mode off']:
+        assert A.SOCIAL_OFF.search(off)
+
+
+def test_voice_commands():
+    assert A.LEARN_VOICE.search('Zephyr, learn my voice.')
+    assert A.FORGET_VOICE.search('Zephyr, forget my voice')
+    assert not A.LEARN_VOICE.search('learn my vocabulary')
+
+
+def test_stage_directions_are_never_spoken():
+    assert A.speakable('[no response]') == ''
+    assert A.speakable('Done, ten. [laughs]') == 'Done, ten.'
+    assert A.speakable('Okay.') == 'Okay.'
+
+
+def test_failure_detection():
+    assert A.failed("I couldn't wake the TV.")
+    assert A.failed('The TV is still on.')
+    assert not A.failed('Turning on the TV.')
+    assert not A.failed("Volume's at 8.")
+
+
+def _session(text):
+    s = A.LiveSession.__new__(A.LiveSession)
+    s.order, s.live, s.deltas = [1], {1: text}, {}
+    return s
+
+
+def test_end_of_turn_waits_for_unfinished_thoughts():
+    assert _session('Zephyr volume to').dangling()
+    assert _session('play some').dangling()
+    assert not _session('Zephyr, volume to eight.').dangling()
+
+
+def test_end_of_turn_needs_a_finished_sentence():
+    assert _session('Zephyr, what is a good movie for tonight?').sounds_finished()
+    assert not _session('See?').sounds_finished()           # one word: probably a misheard name
+    assert not _session('Zephyr,').sounds_finished()
+
+
+def test_volume_is_capped(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(A, 'tv_is_off', lambda: False)
+    monkeypatch.setattr(A, 'get_volume', lambda: 10)
+    monkeypatch.setattr(A, '_upnp', lambda action, args='': sent.update(args=args))
+    assert A.set_volume(level=250) == "Volume's at 60."
+    assert '<DesiredVolume>60</DesiredVolume>' in sent['args']
+    assert A.set_volume(change=-20) == "Volume's at 0."
