@@ -729,16 +729,68 @@ MORNING_SEARCHES = ['boom bap jazzy hip hop mix', 'jazzy boom bap instrumental b
                     'chill boom bap jazz rap instrumentals']
 
 
-def laptop_screens(on):
-    """The laptop screen and the UltraGear. Off is the same as Windows' own screen timeout, so any
-    mouse move or key wakes them; on is a one-pixel mouse nudge, which wakes them."""
+SCREEN_OFF_AFTER_S = 5
+SCREEN_TIMEOUT_NOTE = os.path.join(os.path.dirname(HERE), '.zephyr-screen-timeout')   # the timeout to put back
+
+
+def _screen_timeout(seconds=None):
+    """Read (no argument) or set Windows' plugged-in "turn off my screen after" time, in seconds (0 = never)."""
+    import subprocess
+    run = lambda *args: subprocess.run(['powercfg', *args], capture_output=True, text=True, timeout=10,
+                                       creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).stdout
+    if seconds is None:
+        m = re.search(r'Current AC Power Setting Index: 0x([0-9a-f]+)', run('/q', 'SCHEME_CURRENT', 'SUB_VIDEO', 'VIDEOIDLE'), re.I)
+        return int(m.group(1), 16) if m else 0
+    run('/setacvalueindex', 'SCHEME_CURRENT', 'SUB_VIDEO', 'VIDEOIDLE', str(int(seconds)))
+    run('/setactive', 'SCHEME_CURRENT')
+
+
+def restore_screen_timeout():
+    """Put back the screen timeout good night shortened (also at start-up, in case Zephyr stopped in between)."""
+    try:
+        original = int(open(SCREEN_TIMEOUT_NOTE).read())
+    except (OSError, ValueError):
+        return
+    _screen_timeout(original)
+    os.remove(SCREEN_TIMEOUT_NOTE)
+
+
+def stay_awake():
+    """Screens off = Modern Standby on this laptop, which freezes ordinary apps: after "good night"
+    Zephyr went deaf and the TV never got "off" (27 Oct). While plugged in, ask Windows to keep running
+    with the screens dark, the way a music player does; on battery, let it sleep as usual. Windows ties
+    this request to the thread that makes it, so this thread lives as long as Zephyr."""
     import ctypes
-    user32 = ctypes.windll.user32
+
+    class PowerStatus(ctypes.Structure):
+        _fields_ = [('ac', ctypes.c_ubyte), ('battery', ctypes.c_ubyte), ('percent', ctypes.c_ubyte),
+                    ('saver', ctypes.c_ubyte), ('life', ctypes.c_ulong), ('full_life', ctypes.c_ulong)]
+    status = PowerStatus()
+    while True:
+        ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status))
+        plugged_in = status.ac == 1
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | (0x00000001 if plugged_in else 0))   # ES_CONTINUOUS (+ ES_SYSTEM_REQUIRED)
+        time.sleep(60)
+
+
+def laptop_screens(on):
+    """The laptop screen and the UltraGear.
+    Off: Windows' own screen timeout, shortened to 5 s for a moment and then put back, so the screens go
+    dark the normal way and stay dark until a mouse move or key. Switching them off directly
+    (SC_MONITORPOWER) counts as the sleep button on this laptop: it went into Modern Standby, which froze
+    Zephyr mid-command (the TV never got "off") and left her deaf to "good morning" (27 Oct).
+    On: a one-pixel mouse nudge."""
     if on:
-        user32.mouse_event(0x0001, 1, 0, 0, 0)                 # MOUSEEVENTF_MOVE, there and back
-        user32.mouse_event(0x0001, -1, 0, 0, 0)
-    else:
-        user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2)         # every window: WM_SYSCOMMAND, SC_MONITORPOWER, off
+        restore_screen_timeout()
+        import ctypes
+        ctypes.windll.user32.mouse_event(0x0001, 1, 0, 0, 0)    # MOUSEEVENTF_MOVE, there and back
+        ctypes.windll.user32.mouse_event(0x0001, -1, 0, 0, 0)
+        return
+    if not os.path.exists(SCREEN_TIMEOUT_NOTE):
+        with open(SCREEN_TIMEOUT_NOTE, 'w') as f:
+            f.write(str(_screen_timeout()))
+    _screen_timeout(SCREEN_OFF_AFTER_S)
+    threading.Timer(SCREEN_OFF_AFTER_S + 15, restore_screen_timeout).start()
 
 
 def sunshine_streaming():
@@ -763,10 +815,11 @@ def good_morning():
 
 
 def good_night():
-    """Everything dark: the laptop screens, and the TV fully off (Art Mode would light up again
-    whenever its motion sensor saw someone in the night)."""
+    """Everything dark: the TV fully off (Art Mode would light up again whenever its motion sensor saw
+    someone in the night), then the laptop screens."""
+    reply = turn_off_fully()
     laptop_screens(False)
-    return turn_off_fully()
+    return reply
 
 
 def mirror_laptop():
@@ -1334,6 +1387,8 @@ def transcribe(pcm):
 # ---------------------------------------------------------------- main loop
 
 def main():
+    restore_screen_timeout()
+    threading.Thread(target=stay_awake, daemon=True, name='stay-awake').start()
     model = Model(wakeword_models=['hey_jarvis'], inference_framework='onnx') if USE_HEY_JARVIS else None
     spotter = NameSpotter()
     voice = Voice()

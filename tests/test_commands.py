@@ -259,3 +259,19 @@ def test_opening_anything_else_ends_the_laptop_stream(monkeypatch, app, closes):
     monkeypatch.setattr(A.urllib.request, 'urlopen', lambda req, timeout: type('R', (), {'read': lambda self: b'true'})())
     assert A.tv_open(app)
     assert closed == ([A.MOONLIGHT_APP] if closes else [])
+
+
+def test_good_night_puts_the_screen_timeout_back(monkeypatch, tmp_path):
+    """Screens go dark through Windows' own timeout (not the sleep-button message, which put the laptop
+    into standby and froze Zephyr), and the original timeout comes back afterwards."""
+    timeout = {'now': 0}
+    monkeypatch.setattr(A, 'SCREEN_TIMEOUT_NOTE', str(tmp_path / 'note'))
+    monkeypatch.setattr(A, '_screen_timeout', lambda s=None: timeout['now'] if s is None else timeout.update(now=s))
+    monkeypatch.setattr(A.threading, 'Timer', lambda delay, fn: type('T', (), {'start': lambda self: None})())
+    A.laptop_screens(False)
+    assert timeout['now'] == A.SCREEN_OFF_AFTER_S
+    A.laptop_screens(False)                     # said twice: still remembers the real original
+    A.restore_screen_timeout()
+    assert timeout['now'] == 0
+    A.restore_screen_timeout()                  # nothing left to put back
+    assert timeout['now'] == 0

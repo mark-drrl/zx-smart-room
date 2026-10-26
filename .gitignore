@@ -34,3 +34,4 @@ htmlcov/
 
 # Zephyr -> keeper "busy" note
 .zephyr-busy
+.zephyr-screen-timeout
