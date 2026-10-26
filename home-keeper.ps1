@@ -28,6 +28,12 @@ function Test-Visible($id) {
     try { (Invoke-RestMethod "http://$TV`:8001/api/v2/applications/$id" -TimeoutSec 2).visible -eq $true } catch { $false }
 }
 
+$TizenTube = 'xvvl3S1TT1.TizenTubeStandalone'
+
+function Test-Running($id) {
+    try { (Invoke-RestMethod "http://$TV`:8001/api/v2/applications/$id" -TimeoutSec 2).running -eq $true } catch { $false }
+}
+
 function Test-ZephyrBusy {
     try { [double](Get-Content $BusyFile -ErrorAction Stop) -gt [double][DateTimeOffset]::UtcNow.ToUnixTimeSeconds() } catch { $false }
 }
@@ -68,6 +74,9 @@ while ($true) {
         } else {
             $onScreen = $null
             foreach ($a in $Apps) { if (Test-Visible $a) { $onScreen = $a; break } }
+            # TizenTube only reports "running" (not "visible") while a video plays: if it's running and
+            # nothing else is on screen, the video is what you're watching - don't send you Home (27 Oct)
+            if (-not $onScreen -and (Test-Running $TizenTube)) { $onScreen = $TizenTube }
             if ($onScreen) {
                 if ($onScreen -ne $lastApp) { Write-Log "app on screen: $onScreen" }
                 $lastApp = $onScreen; $emptyPolls = 0

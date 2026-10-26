@@ -21,6 +21,7 @@ def tv(monkeypatch):
     monkeypatch.setattr(A, 'busy', lambda seconds: None)      # never write the real keeper note in tests
     monkeypatch.setattr(A, 'tv_is_off', lambda: state['off'])
     monkeypatch.setattr(A, 'tv_showing', lambda app, wait: state['showing'])
+    monkeypatch.setattr(A, 'youtube_on_screen', lambda: state['showing'])
     monkeypatch.setattr(A, 'tv_open', lambda app: state['opened'].append(app) or True)
     monkeypatch.setattr(A, 'youtube_find', lambda q: {'id': 'vid1', 'title': '4K Campfire by the River - Relaxing | UHD'})
 
@@ -170,3 +171,13 @@ def test_voice_id_keeps_learning_but_not_from_doubtful_matches(tmp_path, monkeyp
     for _ in range(50):
         v.learn(clip(7), 0.9)
     assert len(v.samples) == 40                                     # capped, originals kept
+
+
+def test_a_playing_tizentube_video_counts_as_youtube_on_screen(monkeypatch):
+    states = {A.YOUTUBE_APP: {'running': True, 'visible': False}}       # what the TV reports mid-video
+    monkeypatch.setattr(A, 'app_state', lambda app: states.get(app, {'running': False, 'visible': False}))
+    assert A.youtube_on_screen()
+    states[A.HOME_APP] = {'running': True, 'visible': True}            # but not if Home is in front
+    assert not A.youtube_on_screen()
+    states.clear()                                                      # and not if it isn't running
+    assert not A.youtube_on_screen()

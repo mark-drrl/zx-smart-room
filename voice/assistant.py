@@ -191,6 +191,28 @@ def tv_open(app_id):
         return False
 
 
+def app_state(app_id):
+    """What the TV says about an app: {'running': bool, 'visible': bool} (both False if it won't say)."""
+    try:
+        with urllib.request.urlopen(f'http://{TV_IP}:8001/api/v2/applications/{app_id}', timeout=2) as r:
+            data = json.load(r)
+        return {'running': bool(data.get('running')), 'visible': bool(data.get('visible'))}
+    except Exception:
+        return {'running': False, 'visible': False}
+
+
+def youtube_on_screen():
+    """TizenTube shows as "visible" while browsing, but while a video plays the TV only reports it as
+    running (seen 27 Oct). So: visible, or running while Home and every other known app are hidden."""
+    state = app_state(YOUTUBE_APP)
+    if state['visible']:
+        return True
+    if not state['running']:
+        return False
+    others = [HOME_APP] + [app_id for _, app_id in APPS.values() if app_id != YOUTUBE_APP]
+    return not any(app_state(a)['visible'] for a in dict.fromkeys(others))
+
+
 def tv_showing(app_id, wait_s):
     """True once the TV reports the app on screen, polling for up to wait_s seconds."""
     end = time.time() + wait_s
@@ -643,7 +665,7 @@ def youtube_play(query):
     yt = youtube()
     with ThreadPoolExecutor(1) as pool:
         search = pool.submit(youtube_find, query)
-        opening = not tv_showing(YOUTUBE_APP, 0)
+        opening = not youtube_on_screen()
         if opening:
             tv_open(YOUTUBE_APP)
             tv_showing(YOUTUBE_APP, 8)                 # on screen first: a video sent while it's still
