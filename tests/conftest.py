@@ -2,7 +2,11 @@
 model libraries are replaced by empty stand-ins before assistant.py is imported."""
 import os
 import sys
+import tempfile
 import types
+
+# Tests log to a throwaway file, never Zephyr's real assistant.log (the nightly review measures that).
+os.environ['ZEPHYR_LOG'] = os.path.join(tempfile.mkdtemp(prefix='zephyr-tests-'), 'assistant.log')
 
 VOICE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'voice')
 sys.path.insert(0, VOICE)

@@ -94,7 +94,10 @@ FOLLOW_UP_S = 5.0                 # after a chat reply, keep listening this long
 
 log = logging.getLogger('assistant')
 log.setLevel(logging.INFO)
-_h = RotatingFileHandler(os.path.join(HERE, 'assistant.log'), maxBytes=512 * 1024, backupCount=1, encoding='utf-8')
+# ZEPHYR_LOG lets tests write somewhere else: test runs once polluted the real log (and the nightly
+# review's measurements) with simulated failures.
+_h = RotatingFileHandler(os.environ.get('ZEPHYR_LOG') or os.path.join(HERE, 'assistant.log'), maxBytes=512 * 1024,
+                         backupCount=1, encoding='utf-8')
 _h.setFormatter(logging.Formatter('%(asctime)s  %(message)s', '%Y-%m-%d %H:%M:%S'))
 log.addHandler(_h)
 if sys.stdout and sys.stdout.isatty():

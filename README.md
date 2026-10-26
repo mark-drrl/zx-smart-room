@@ -20,12 +20,27 @@ Smart room projects around a Samsung **The Frame** TV (Tizen 6.0), run from a Wi
 
 ## Continuous improvement and delivery
 
-- **CI**: every push runs the tests on GitHub (`.github/workflows/ci.yml`).
-- **CD**: `deploy.ps1` tests first and only restarts Zephyr if everything passes. Zephyr runs as the
-  `Zephyr` scheduled task (starts at login, restarts itself if it crashes).
-- **Learning from use**: corrections become lessons right away (`learn_lesson` tool), and the
-  `Zephyr Nightly Review` task reviews each day at 4 am. Lessons live in the vault at
-  `Zephyr/Lessons.md`, reports in `Zephyr/Reports/`. Both are plain Markdown: edit or delete freely.
+**Continuous delivery** (code changes ship safely):
+
+| Stage | What runs |
+|---|---|
+| Every commit | `tools/hooks/pre-commit`: secret scan, ruff lint, all tests (`git config core.hooksPath tools/hooks`) |
+| Every push | GitHub Actions (`.github/workflows/ci.yml`): lint, tests with a coverage floor, gitleaks secret scan |
+| Every deploy | `deploy.ps1`: lint + tests, committed code only, restart, `voice/health.py` (Zephyr stable + TV, Corelynx, Claude, ElevenLabs, YouTube, Spotify, SmartThings), version tag `deployed-*`, automatic rollback to the last good tag if unhealthy |
+| Always | Zephyr runs as the `Zephyr` scheduled task: starts at login, restarts itself after a crash |
+
+Dependencies are pinned in `requirements.txt` (yt-dlp deliberately kept current). Tests use fakes for
+Claude, the TV, Spotify, YouTube and the voice model, and never write to the real log.
+
+**Continuous improvement** (Zephyr gets better from real use):
+
+| Loop | How |
+|---|---|
+| Corrections | "No, I said fifteen" → `learn_lesson` → `Zephyr/Lessons.md` in the Obsidian vault, read before every reply |
+| Nightly review (4 am) | `voice/review.py` measures the day, compares it with the 7-day average (regressions flagged at the top of the report), and proposes lessons |
+| Probe before adopting | `voice/probe.py` (Propose–Probe–Compose, after Google Research's Harness2): proposed lessons are tested on recent real requests against stand-in devices and adopted only if Zephyr answers at least as well |
+| Memory | Long-term facts (`Memory.md`), lessons, and the last 20 conversations |
+| Code fixes | The report's "ideas for code changes" feed the next development session; each fix ships with a regression test |
 
 ## Not in the repo (and how to get it back)
 

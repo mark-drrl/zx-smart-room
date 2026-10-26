@@ -22,8 +22,10 @@ import anthropic  # noqa: E402
 from brain import SYSTEM  # noqa: E402
 from keystore import fill  # noqa: E402
 from memory import Memory  # noqa: E402
+from probe import adopt, probe  # noqa: E402
 
 MODEL = 'claude-haiku-5-5'
+PROBE_QUESTIONS = 10
 LINE = re.compile(r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})  (.*)$')
 
 REVIEW_TOOL = {
@@ -106,6 +108,33 @@ def measure(rows):
     }
 
 
+# Measurements where a rise means Zephyr got worse, and how much of a rise counts as a regression
+# against her own 7-day average (relative, plus an absolute floor so tiny numbers don't alarm).
+WATCH = {
+    'median time to first word (s)': (0.25, 0.4),
+    'slow transcript fallbacks (upload)': (0.5, 5),
+    'interruptions': (1.0, 3),
+    'errors': (1.0, 3),
+    'recordings ended by time limit': (1.0, 3),
+    'voices rejected (not Mark)': (1.0, 4),
+}
+
+
+def trends(history, today):
+    """Warnings for measurements clearly worse than the 7-day average before today."""
+    past = history[-7:]
+    warnings = []
+    for key, (rel, floor) in WATCH.items():
+        values = [d[key] for d in past if isinstance(d.get(key), (int, float))]
+        now = today.get(key)
+        if len(values) < 3 or not isinstance(now, (int, float)):
+            continue
+        avg = sum(values) / len(values)
+        if now > avg * (1 + rel) and now - avg >= floor:
+            warnings.append(f'{key}: {now} today vs {avg:.1f} on average over the last {len(values)} days')
+    return warnings
+
+
 def condensed(rows, limit=60000):
     keep = re.compile(r'^(heard:|Claude used|transcript|not your voice|name not in|interrupted|error|.*failed)')
     text = '\n'.join(f'{t[11:16]} {m}' for t, m in rows if keep.match(m))
@@ -126,6 +155,17 @@ def main():
     day = datetime.date.today().isoformat()
     reports = os.path.join(memory.dir, 'Reports')
     os.makedirs(reports, exist_ok=True)
+    history_file = os.path.join(reports, 'metrics.jsonl')        # one line of measurements per day
+    try:
+        with open(history_file, encoding='utf-8') as f:
+            history = [json.loads(line) for line in f if line.strip()]
+    except OSError:
+        history = []
+    history = [h for h in history if h.get('day') != day]
+    warnings = trends(history, metrics)
+    with open(history_file, 'w', encoding='utf-8') as f:
+        for h in (history + [{'day': day, **metrics}])[-90:]:
+            f.write(json.dumps(h) + '\n')
 
     review = {'summary': 'No conversations in this period.', 'lessons': [], 'code_ideas': []}
     if metrics['conversations with Claude'] + metrics['instant TV commands'] > 0:
@@ -140,11 +180,32 @@ def main():
         block = next(b for b in response.content if b.type == 'tool_use')
         review = block.input
 
-    added = [ln for ln in review['lessons'][:5] if memory.add_lesson(ln, source='review') == 'Lesson saved.']
+    # Probe before adopting (Harness2's Propose-Probe-Compose): replay recent real requests with and
+    # without the proposed lessons, and keep them only if Zephyr answers at least as well with them.
+    candidates = [ln for ln in review['lessons'][:5] if ln.strip()]
+    probe_line, added = '', []
+    if candidates:
+        questions = [q for _, q, _ in memory.recent(30) if len(q.split()) >= 2][-PROBE_QUESTIONS:]
+        if questions:
+            result = probe(candidates, os.path.dirname(memory.dir), env['ANTHROPIC_API_KEY'], questions)
+            keep = adopt(result)
+            probe_line = (f'Probed on {len(questions)} recent requests: better {result["wins"]}, worse '
+                          f'{result["losses"]}, same {result["ties"]} -> {"adopted" if keep else "rejected"}.')
+            if keep:
+                added = [ln for ln in candidates if memory.add_lesson(ln, source='review') == 'Lesson saved.']
+        else:
+            probe_line = 'No recent requests to probe with: lessons held back.'
     with open(os.path.join(reports, day + '.md'), 'w', encoding='utf-8') as f:
-        f.write(f'# Zephyr review {day}\n\n{review["summary"]}\n\n## Measurements (last {hours:g} h)\n\n')
+        f.write(f'# Zephyr review {day}\n\n')
+        if warnings:
+            f.write('> [!warning] Getting worse\n' + ''.join(f'> - {w}\n' for w in warnings) + '\n')
+        f.write(f'{review["summary"]}\n\n## Measurements (last {hours:g} h)\n\n')
         f.write('| | |\n|---|---|\n' + ''.join(f'| {k} | {v} |\n' for k, v in metrics.items()))
-        f.write('\n## New lessons\n\n' + (''.join(f'- {ln}\n' for ln in added) or '- none\n'))
+        f.write('\n## New lessons\n\n' + (probe_line + '\n\n' if probe_line else '') +
+                (''.join(f'- {ln}\n' for ln in added) or '- none adopted\n'))
+        rejected = [ln for ln in candidates if ln not in added]
+        if rejected:
+            f.write('\nProposed but not adopted:\n\n' + ''.join(f'- {ln}\n' for ln in rejected))
         f.write('\n## Ideas for code changes\n\n' + (''.join(f'- {c}\n' for c in review['code_ideas'][:5]) or '- none\n'))
     print(f'Review written: {os.path.join(reports, day + ".md")} ({len(added)} new lessons)')
 

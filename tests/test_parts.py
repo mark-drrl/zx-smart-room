@@ -75,3 +75,13 @@ def test_repeated_openers_are_recognised():
     assert B.OPENER.match('Ha, okay. Why did ').group(1) == 'Ha, okay. '
     assert B.OPENER.match('Hmm, honestly? ')
     assert not B.OPENER.match('Tokyo. ')
+
+
+def test_review_flags_regressions_against_the_7_day_average():
+    import review
+    week = [{'median time to first word (s)': 2.0, 'slow transcript fallbacks (upload)': 10, 'errors': 1}] * 7
+    worse = {'median time to first word (s)': 3.1, 'slow transcript fallbacks (upload)': 34, 'errors': 2}
+    warnings = review.trends(week, worse)
+    assert any('first word' in w for w in warnings) and any('upload' in w for w in warnings)
+    assert not any('errors' in w for w in warnings)              # 1 -> 2 is below the floor: no alarm
+    assert review.trends(week[:2], worse) == []                   # too little history to judge
