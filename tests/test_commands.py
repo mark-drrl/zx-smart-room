@@ -225,6 +225,6 @@ def test_busy_note_for_the_home_keeper(tmp_path, monkeypatch):
     monkeypatch.setattr(A, 'BUSY_FILE', str(note))
     A.busy(40)
     first = float(note.read_text())
-    assert 35 < first - A.time.time() <= 40
+    assert 35 < first - A.time.time() <= 41                     # stored to the whole second
     A.busy(5)                                                   # a shorter request never cuts it short
     assert float(note.read_text()) == first
