@@ -129,7 +129,7 @@ TOKEN_FILE = os.path.join(HERE, 'tv-token.txt')
 NAME = ENV.get('WAKE_NAME', 'Zephyr').strip() or 'Zephyr'
 NAME_SPELLINGS = {
     'zephyr': ['zephyr', 'zephyrs', 'zefir', 'zephir', 'zafir', 'zephire', 'sephir', 'zeffer', 'zephyra',
-               'zephy', 'zeffir', 'zafer', 'zefer', 'jeffrey', 'suffer', 'sefer', 'sapphire'],     # how Corelynx has misheard it
+               'zephy', 'zeffir', 'zafer', 'zefer', 'zapper', 'zephyrt', 'jeffrey', 'suffer', 'sefer', 'sapphire'],     # how Corelynx has misheard it
     'jarvis': ['jarvis', "jarvis's", 'javis', 'jarvas', 'jervis', 'charvis', 'harvis', 'harvest', 'garvis', 'travis'],
 }.get(NAME.lower(), [NAME.lower()])
 NAME_LOOSE = re.compile(r"\b(hey|hi|okay|ok)?\s*(" + '|'.join(map(re.escape, NAME_SPELLINGS)) + r")\b", re.I)
@@ -612,10 +612,12 @@ def youtube_play(query):
     and the connection is made; the video is sent as soon as YouTube answers, not after a fixed
     wait. Measured on an open connection: search ~1.6 s + send ~1.7 s."""
     from concurrent.futures import ThreadPoolExecutor
+    woke_tv = False
     if tv_is_off():
         woke = turn_on()
         if failed(woke):
             return woke
+        woke_tv = True
     yt = youtube()
     with ThreadPoolExecutor(1) as pool:
         search = pool.submit(youtube_find, query)
@@ -629,7 +631,9 @@ def youtube_play(query):
     if yt is None:
         return "YouTube is open, but I can't pick videos until it's linked with a TV code."
     try:
-        yt.play(video['id'], confirm=opening)        # brought from the background: confirm it switched
+        # brought to the front or started cold: confirm it switched (a cold start after waking the TV
+        # needed longer than 3 tries on 26 Oct)
+        yt.play(video['id'], confirm=opening or woke_tv, attempts=7 if woke_tv else 4)
     except Exception as e:
         log.info(f'YouTube link failed: {e}')
         return "YouTube is open, but it didn't take the video. Try again in a moment."
@@ -1015,7 +1019,7 @@ class LiveTranscriber:
     upload took ~1.5 s. Opening a connection takes ~1.1 s, so one is always kept open and
     ready, and a fresh spare is opened in the background after each use."""
     URL = 'wss://sttapi.corelynx.io/v1/stream'
-    SPARE_MAX_AGE_S = 240
+    SPARE_MAX_AGE_S = 90             # Corelynx drops idle connections (SSL EOF seen): keep the spare fresh
 
     def __init__(self, key):
         self.key = key
@@ -1053,12 +1057,23 @@ class LiveTranscriber:
             self.need.wait(10)               # refill as soon as the spare is taken
             self.need.clear()
 
+    @staticmethod
+    def _alive(ws):
+        """A spare can look connected after the server dropped it: ping it before trusting it."""
+        if not ws.connected:
+            return False
+        try:
+            ws.ping()
+            return True
+        except Exception:
+            return False
+
     def start(self):
         with self.lock:
             spare, self.spare = self.spare, None
         self.need.set()
         try:
-            ws = spare[0] if spare and spare[0].connected else self._open()
+            ws = spare[0] if spare and self._alive(spare[0]) else self._open()
         except Exception as e:
             log.info(f'live stream unavailable: {e}')
             return None

@@ -46,7 +46,7 @@ def test_name_is_removed_from_requests():
 
 
 @pytest.mark.parametrize('heard', ['Zephyr, open Spotify.', 'Zafer volume to 12.', 'Jeffrey turn on my T V.',
-                                   'Suffer. Go to Spotify.'])
+                                   'Suffer. Go to Spotify.', 'Zapper volume to thirty-five.'])
 def test_name_spellings_corelynx_produces(heard):
     assert A.NAME_LOOSE.search(heard)
 

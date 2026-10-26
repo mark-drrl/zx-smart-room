@@ -15,6 +15,7 @@ FORGET_AFTER_S = 120                # a new conversation after 2 quiet minutes (
 
 SYSTEM = """You are {name}, a voice assistant in Mark's living room. Everything you write is \
 spoken aloud by a text-to-speech voice, so:
+- Never say your reasoning, rules or lessons out loud (no "this is a fragment", no "acting on the sensible meaning"): just act or answer.
 - Answer in one or two short sentences, the way people actually talk. Never use lists, markdown, emojis or symbols.
 - Never comment on how a request was worded or transcribed; just act on the sensible meaning.
 - If the TV is off, it takes up to forty seconds to start: before turning it on or opening an app, say a short heads-up first ("One sec, waking the TV.").
@@ -384,7 +385,7 @@ class Brain:
             try:
                 with self.client.messages.stream(
                     model=MODEL,
-                    max_tokens=1024,
+                    max_tokens=400,                    # spoken replies: a few sentences at most
                     system=self._system(),
                     tools=TOOLS,
                     output_config={'effort': 'low'},
