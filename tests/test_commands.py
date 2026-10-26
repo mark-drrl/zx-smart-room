@@ -1,4 +1,5 @@
 """How Zephyr understands what you say: commands, stop words, modes, and what she speaks."""
+import numpy as np
 import pytest
 
 import assistant as A
@@ -90,7 +91,7 @@ def test_ending_a_conversation(said):
     assert A.DONE.match(said)
 
 
-@pytest.mark.parametrize('said', ['no worries, tell me a joke', 'what should I watch tonight'])
+@pytest.mark.parametrize('said', ['no worries, tell me a joke', 'what should I watch tonight', 'Zephyr, good night', 'good night'])
 def test_real_questions_do_not_end_it(said):
     assert not A.DONE.match(said)
 
@@ -291,3 +292,11 @@ def test_misheard_name_at_the_start_still_counts(heard, command):
 def test_everyday_words_later_in_a_sentence_are_not_the_name():
     assert not A.NAME_AT_START.search('you should let her go home')
     assert A.without_name('you should let her go home') == 'you should let her go home'
+
+
+def test_speakerphone_boost_lifts_quiet_speech_and_never_clips():
+    quiet = np.full(10, 400, dtype=np.int16)
+    loud = np.array([30000, -32768], dtype=np.int16)
+    assert abs(int(A.soft_gain(quiet, 2.5)[0]) - 1000) < 20          # ~2.5x while quiet
+    boosted = A.soft_gain(loud, 2.5)
+    assert boosted.max() <= 32767 and boosted.min() >= -32767       # rounds off, no wrap-around

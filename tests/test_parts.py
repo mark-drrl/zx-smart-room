@@ -85,3 +85,4 @@ def test_review_flags_regressions_against_the_7_day_average():
     assert any('first word' in w for w in warnings) and any('upload' in w for w in warnings)
     assert not any('errors' in w for w in warnings)              # 1 -> 2 is below the floor: no alarm
     assert review.trends(week[:2], worse) == []                   # too little history to judge
+

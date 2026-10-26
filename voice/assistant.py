@@ -88,6 +88,14 @@ SPOT_CONFIDENCE = 0.6
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
+SPEAKERPHONE_GAIN = 2.5           # quiet night-time speech from bed, a few metres from the AirHug (27 Oct)
+
+
+def soft_gain(samples, gain):
+    """Boost quiet speech without clipping loud speech: linear while quiet, rounding off smoothly
+    towards full scale instead of cutting off."""
+    x = samples.astype(np.float32) * (gain / 32768.0)
+    return (np.tanh(x) * 32767.0).astype(np.int16)
 PHONE = None                      # the phone mic, once main() has started it
 SPEAKERPHONE = False              # set in main(): the mic is a speakerphone with echo cancellation
 SOUND_UNTIL = 0.0                 # while the wake sound plays, the mic hears it: not your speech
@@ -1004,7 +1012,7 @@ RESUME = re.compile(r"\bwake up\b|\b(start|keep|begin) listening\b|\bi'?m back\b
 # Ends a conversation without a reply: "stop", "never mind", "that's all, thanks".
 DONE = re.compile(r"^(ok(ay)?|alright|no|thanks|thank you|cheers|great|perfect|cool|stop|enough|cancel|"
                   r"never ?mind|forget it|that'?s (all|it|enough)|i'?m (good|done|fine)|nothing|"
-                  r"be quiet|quiet|shut up|shh+|bye|goodbye|good night|night)\b[\s,.!]*"
+                  r"be quiet|quiet|shut up|shh+|bye|goodbye)\b[\s,.!]*"
                   r"(thanks|thank you|that'?s all|that'?s it|bye|for now|now|please|zephyr|mate|bro)?[\s,.!]*$", re.I)
 
 
@@ -1463,12 +1471,15 @@ def main():
     global SPEAKERPHONE
     sd.default.device = (pick_device(ENV.get('MIC_DEVICE'), 'input'), pick_device(ENV.get('SPEAKER_DEVICE'), 'output'))
     SPEAKERPHONE = 'microphone array' not in sd.query_devices(sd.default.device[0])['name'].lower()
-    gain = 1 if SPEAKERPHONE else MIC_GAIN    # the laptop mic is quiet after its own noise suppression
+    gain = SPEAKERPHONE_GAIN if SPEAKERPHONE else MIC_GAIN    # the laptop mic is quiet after its own noise suppression
     phone = None
     def on_audio(data, n, t, s):
         if phone and phone.connected and not SPEAKERPHONE:
             return                        # the phone is the mic right now
-        route(np.clip(data[:, 0].astype(np.int32) * gain, -32768, 32767).astype(np.int16))
+        if SPEAKERPHONE:
+            route(soft_gain(data[:, 0], gain))
+        else:
+            route(np.clip(data[:, 0].astype(np.int32) * gain, -32768, 32767).astype(np.int16))
     stream = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=FRAME, callback=on_audio)
     # Android phone as the mic (AndroidMic app, Wi-Fi): used whenever it's connected. Its audio
     # follows the laptop mic's on/off, so Zephyr never hears itself through the phone either.
@@ -1743,7 +1754,7 @@ def speech_detector():
         import sherpa_onnx
         c = sherpa_onnx.VadModelConfig()
         c.silero_vad.model = os.path.join(HERE, 'models', 'silero_vad.onnx')
-        c.silero_vad.threshold = 0.5
+        c.silero_vad.threshold = 0.35            # 0.5 missed quiet night-time speech from bed (27 Oct: 58% "nothing said")
         c.silero_vad.min_silence_duration = 0.25
         c.silero_vad.min_speech_duration = 0.1
         c.sample_rate = RATE
