@@ -1,0 +1,29 @@
+# Runs on every push and pull request. Hardware, speech models and keys are not needed:
+# tests/conftest.py and the fakes in the tests stand in for them.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: pip install numpy anthropic keyring websocket-client aiohttp pyytlounge pytest pytest-cov ruff
+      - name: Lint
+        run: ruff check voice tests
+      - name: Tests with coverage floor
+        run: python -m pytest -q --cov --cov-fail-under=35 --cov-report=term
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
