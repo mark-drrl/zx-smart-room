@@ -63,9 +63,15 @@ if ($HomeScreen) {
 }
 
 Write-Host "4/6  Restarting the Home keeper and Zephyr on $commit"
+schtasks /End /TN 'Frame Home Keeper' 2>$null | Out-Null
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*home-keeper.ps1*' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false }
+Start-Sleep -Seconds 2                       # Windows ignores /Run while it still thinks the task is running
 schtasks /Run /TN 'Frame Home Keeper' | Out-Null
+Start-Sleep -Seconds 3
+if (-not (Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*home-keeper.ps1*' })) {
+    Write-Host 'The Home keeper did not restart: check the "Frame Home Keeper" scheduled task.' -ForegroundColor Red; exit 1
+}
 $up = Restart-Zephyr
 
 Write-Host '5/6  Health check'
