@@ -247,3 +247,15 @@ def test_busy_note_for_the_home_keeper(tmp_path, monkeypatch):
     assert 35 < first - A.time.time() <= 41                     # stored to the whole second
     A.busy(5)                                                   # a shorter request never cuts it short
     assert float(note.read_text()) == first
+
+
+@pytest.mark.parametrize('app, closes', [(A.HOME_APP, True), (A.YOUTUBE_APP, True), (A.MOONLIGHT_APP, False)])
+def test_opening_anything_else_ends_the_laptop_stream(monkeypatch, app, closes):
+    """Home or another app closes Moonlight, so Sunshine turns the TV's virtual screen off."""
+    closed = []
+    monkeypatch.setattr(A, 'busy', lambda s: None)
+    monkeypatch.setattr(A, 'app_state', lambda a: {'running': a == A.MOONLIGHT_APP, 'visible': False})
+    monkeypatch.setattr(A, 'tv_close', lambda a: closed.append(a) or True)
+    monkeypatch.setattr(A.urllib.request, 'urlopen', lambda req, timeout: type('R', (), {'read': lambda self: b'true'})())
+    assert A.tv_open(app)
+    assert closed == ([A.MOONLIGHT_APP] if closes else [])

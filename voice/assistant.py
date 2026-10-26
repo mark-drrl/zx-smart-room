@@ -194,6 +194,8 @@ def tv_close(app_id):
 
 def tv_open(app_id):
     busy(20)
+    if app_id != MOONLIGHT_APP and app_state(MOONLIGHT_APP)['running']:
+        tv_close(MOONLIGHT_APP)      # leaving the laptop stream ends it, so Sunshine turns the 3rd screen off
     req = urllib.request.Request(f'http://{TV_IP}:8001/api/v2/applications/{app_id}', method='POST')
     try:
         urllib.request.urlopen(req, timeout=5).read()
