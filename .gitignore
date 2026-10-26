@@ -24,3 +24,10 @@ voice/samples/
 voice/wake.wav
 frame-launcher/private/
 voice/voiceprint.npz
+
+# test artefacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
