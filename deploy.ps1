@@ -28,9 +28,12 @@ function Restart-Zephyr {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 2
         if ((Get-Item $log).LastWriteTime -gt $started) {
-            $tail = Get-Content $log -Tail 4
-            if ($tail -match 'crashed') { return $false }
-            if ($tail -match 'replies play') { return $true }
+            # only lines written after this restart: earlier "crashed" lines (e.g. from the version being
+            # rolled back) must not count against the new one - that misjudged the first rollback drill
+            $since = $started.ToString('yyyy-MM-dd HH:mm:ss')
+            $new = Get-Content $log -Tail 40 | Where-Object { $_.Length -ge 19 -and $_.Substring(0, 19) -ge $since }
+            if ($new -match 'crashed') { return $false }
+            if ($new -match 'replies play') { return $true }
         }
     }
     return $false
