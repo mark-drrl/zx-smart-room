@@ -60,3 +60,18 @@ def test_review_measures_a_log():
     assert m['conversations with Claude'] == 1 and m['instant TV commands'] == 1
     assert m['median time to first word (s)'] == 1.9 and m['voices rejected (not Mark)'] == 1
     assert m['interruptions'] == 1
+
+
+def test_recent_conversations_are_remembered(tmp_path):
+    m = M.Memory(str(tmp_path))
+    for i in range(25):
+        m.log_turn(f'question {i}', f'answer {i}')
+    recent = m.recent()
+    assert len(recent) == 20 and recent[-1][1:] == ('question 24', 'answer 24')
+
+
+def test_repeated_openers_are_recognised():
+    import brain as B
+    assert B.OPENER.match('Ha, okay. Why did ').group(1) == 'Ha, okay. '
+    assert B.OPENER.match('Hmm, honestly? ')
+    assert not B.OPENER.match('Tokyo. ')

@@ -8,6 +8,7 @@
 Memory.md is read fresh before every reply, so edits made in Obsidian take effect straight away.
 """
 import os
+import re
 import threading
 import time
 
@@ -82,6 +83,20 @@ class Memory:
             with open(self.lessons_file, 'w', encoding='utf-8') as f:
                 f.write(LESSONS_HEADER + ''.join(f'- {l}\n' for l in lines))
         return 'Lesson saved.'
+
+    def recent(self, n=20, days=2):
+        """The last n exchanges from the conversation notes (today and yesterday), oldest first."""
+        pairs = []
+        for back in range(days - 1, -1, -1):
+            day = time.strftime('%Y-%m-%d', time.localtime(time.time() - back * 86400))
+            try:
+                with open(os.path.join(self.talk_dir, day + '.md'), encoding='utf-8') as f:
+                    text = f.read()
+            except OSError:
+                continue
+            for m in re.finditer(r'\*\*(\d\d:\d\d) Mark:\*\* (.*)\n\*\*Zephyr:\*\* (.*)', text):
+                pairs.append((('yesterday ' if back else '') + m.group(1), m.group(2).strip(), m.group(3).strip()))
+        return pairs[-n:]
 
     def log_turn(self, heard, said):
         day = time.strftime('%Y-%m-%d')

@@ -927,7 +927,8 @@ class Voice:
         if made is None:
             made = self.kokoro.create(sentence, voice=self.voice, speed=round(1.05 * RHYTHM.voice_speed(), 2),
                                       lang=self.lang)
-        if len(sentence) < 60:
+        # keep short confirmations, never reactions or jokes: replaying "Ha, sure." sounds canned
+        if len(sentence) < 60 and not re.match(r"(ha|haha|ooh|oh|hmm|ah|aw|wow|heh|well|so)\b", sentence, re.I):
             if len(self.cache) > 300:
                 self.cache.clear()
             self.cache[key] = made

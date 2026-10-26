@@ -39,7 +39,7 @@ Mark lives in the UAE.
 How you talk: like a friend sitting on the couch with Mark, not like a customer-service assistant.
 - Use everyday spoken English: contractions, short phrases, sentence fragments are fine \
 ("Yeah, on it." "Ooh, good one." "Hmm, honestly? Interstellar.").
-- React before you answer when it's natural: "Oh nice", "Ha", "Ah, okay", "Hmm", "Right", \
+- Only sometimes react before you answer (about one reply in three): "Oh nice", "Ha", "Ah, okay", "Hmm", "Right", \
 "Fair enough". Vary them; never open two replies in a row the same way.
 - Match his energy: relaxed when he's relaxed, quick when he's in a hurry, playful when he jokes. \
 Tease him lightly now and then, have opinions, and say what you'd pick.
@@ -48,7 +48,8 @@ pause, "?" to lift your voice, "!" for real enthusiasm (sparingly). Keep most se
 - Never say "I'd be happy to help", "Certainly", "Great question", "As an AI", "Is there anything \
 else", or end with an offer of more help. Don't repeat his question back. Don't over-explain.
 - For quick tasks, just a few words: "Done." "Yep, eight." "Sure, here's YouTube."
-- A follow-up question is fine when you genuinely want to know, but not every time."""
+- A follow-up question is fine when you genuinely want to know, but not every time.
+- Jokes: vary the kind (one-liners, puns, dry observations, a quick story, something about the room or the UAE), never two "Why did the..." in a row, and never one you've told recently."""
 
 APP_NAMES = ['Netflix', 'YouTube', 'Prime Video', 'Spotify', 'Apple TV', 'Gallery', 'Browser', 'Google Meet']
 REMOTE_KEYS = ['KEY_UP', 'KEY_DOWN', 'KEY_LEFT', 'KEY_RIGHT', 'KEY_ENTER', 'KEY_RETURN', 'KEY_HOME', 'KEY_MENU',
@@ -261,6 +262,11 @@ SLOW_ACK = {'spotify_play': 'Putting it on.', 'youtube_play': 'Pulling it up.', 
 FAILED = re.compile(r"couldn'?t|can'?t|wouldn'?t|isn'?t|not connected|nothing found|no app|is off|failed|unknown", re.I)
 
 
+OPENER = re.compile(r"^\s*((?:ha+|haha|ooh+|oh|hmm+|ah+|aw+|wow|heh|right|okay|ok|sure|well|nice|alright|yeah|"
+                    r"fair enough|got it|good one|oh nice|ah okay)(?:[ ,]+(?:okay|ok|sure|nice|so|then|yeah|right))?[,.!]+\s+)",
+                    re.I)
+
+
 def _norm(text):
     return ' '.join(re.sub(r"[^a-z0-9' ]", ' ', text.lower()).split())
 
@@ -367,6 +373,11 @@ class Brain:
         extra = f'Right now it is {now} (UAE time, from the laptop clock).'
         if facts:
             extra += '\n\nWhat you remember:\n' + '\n'.join('- ' + f for f in facts)
+        recent = self.memory.recent() if self.memory else []
+        if recent:
+            extra += ('\n\nYour recent conversations with Mark (oldest first). You remember these. Never reuse '
+                      'their openings, jokes, stories or phrasing:\n' +
+                      '\n'.join(f'[{t}] Mark: {q[:160]} | You: {a[:200]}' for t, q, a in recent))
         lessons = self.memory.lessons() if self.memory else []
         if lessons:
             extra += '\n\nLessons from past mistakes (follow them):\n' + '\n'.join('- ' + l for l in lessons)
@@ -383,6 +394,11 @@ class Brain:
         self.history.append({'role': 'user', 'content': text})
         spoke = False
         spoken_text = ''
+        # Claude keeps opening with the same reaction ("Ha, okay." five jokes in a row): openings used
+        # in her last few replies are cut before they're spoken.
+        opener = ''
+        recent = self.memory.recent(8) if self.memory else []
+        used_openers = {_norm(m.group(1)) for _, _, a in recent if (m := OPENER.match(a + ' '))}
         self.used_tools = False
 
         for _ in range(4):                       # at most a few tool round trips per turn
@@ -398,9 +414,24 @@ class Brain:
                 ) as stream:
                     for event in stream:
                         if event.type == 'text':
-                            spoke = True
-                            spoken_text += event.text
-                            yield event.text
+                            if opener is not None:          # still deciding about the opening words
+                                opener += event.text
+                                m = OPENER.match(opener)
+                                if m is None and len(opener) < 24:
+                                    continue
+                                if m and _norm(m.group(1)) in used_openers:
+                                    opener = opener[m.end():]   # said that way recently: skip it
+                                piece, opener = opener, None
+                            else:
+                                piece = event.text
+                            if piece:
+                                spoke = True
+                                spoken_text += piece
+                                yield piece
+                    if opener:                               # a reply shorter than the check
+                        spoke, spoken_text = True, spoken_text + opener
+                        yield opener
+                        opener = None
                     response = stream.get_final_message()
             except ValueError:
                 continue                             # a tool input that couldn't be parsed: ask again
