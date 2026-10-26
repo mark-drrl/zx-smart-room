@@ -31,3 +31,6 @@ voice/voiceprint.npz
 htmlcov/
 .pytest_cache/
 .ruff_cache/
+
+# Zephyr -> keeper "busy" note
+.zephyr-busy

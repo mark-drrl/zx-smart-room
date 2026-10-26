@@ -218,3 +218,13 @@ def test_pause_after_the_name_does_not_end_the_request():
 def test_silence_announcements_are_not_spoken():
     assert A.speakable("That's a fragment with no clear request, so I'll stay quiet.") == ''
     assert A.speakable('Leave the lights on, I like them.') != ''
+
+
+def test_busy_note_for_the_home_keeper(tmp_path, monkeypatch):
+    note = tmp_path / '.zephyr-busy'
+    monkeypatch.setattr(A, 'BUSY_FILE', str(note))
+    A.busy(40)
+    first = float(note.read_text())
+    assert 35 < first - A.time.time() <= 40
+    A.busy(5)                                                   # a shorter request never cuts it short
+    assert float(note.read_text()) == first

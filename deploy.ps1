@@ -62,7 +62,10 @@ if ($HomeScreen) {
     Write-Host '3/6  Home screen: unchanged (use -HomeScreen to redeploy it)'
 }
 
-Write-Host "4/6  Restarting Zephyr on $commit"
+Write-Host "4/6  Restarting the Home keeper and Zephyr on $commit"
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*home-keeper.ps1*' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false }
+schtasks /Run /TN 'Frame Home Keeper' | Out-Null
 $up = Restart-Zephyr
 
 Write-Host '5/6  Health check'

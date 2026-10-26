@@ -166,7 +166,22 @@ def tv_info(timeout=2.0):
         return None
 
 
+BUSY_FILE = os.path.join(os.path.dirname(HERE), '.zephyr-busy')
+
+
+def busy(seconds):
+    """Tell the Home keeper (home-keeper.ps1) to leave the TV alone for a while: Zephyr is switching
+    apps. Without it, the keeper sent the TV Home in the middle of Spotify -> YouTube (27 Oct)."""
+    try:
+        until = max(time.time() + seconds, float(open(BUSY_FILE).read() or 0)) if os.path.exists(BUSY_FILE) else time.time() + seconds
+        with open(BUSY_FILE, 'w') as f:
+            f.write(f'{until:.0f}')
+    except (OSError, ValueError):
+        pass
+
+
 def tv_open(app_id):
+    busy(20)
     req = urllib.request.Request(f'http://{TV_IP}:8001/api/v2/applications/{app_id}', method='POST')
     try:
         urllib.request.urlopen(req, timeout=5).read()
@@ -335,6 +350,7 @@ def wake_tv():
 
 
 def turn_on():
+    busy(60)
     """From fully off or from Art Mode, end on the Home screen."""
     if tv_is_off():
         if not wake_tv():
@@ -617,6 +633,7 @@ def youtube_play(query):
     and the connection is made; the video is sent as soon as YouTube answers, not after a fixed
     wait. Measured on an open connection: search ~1.6 s + send ~1.7 s."""
     from concurrent.futures import ThreadPoolExecutor
+    busy(40)
     woke_tv = False
     if tv_is_off():
         woke = turn_on()
@@ -672,6 +689,7 @@ def spotify():
 
 def spotify_play(query, kind):
     """Search Spotify and play the best match on the TV's Spotify app (Spotify Connect)."""
+    busy(40)
     sp = spotify()
     if not sp.ready:
         return 'Spotify is not connected yet.'

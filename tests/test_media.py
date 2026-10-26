@@ -18,6 +18,7 @@ class FakeYouTube:
 @pytest.fixture
 def tv(monkeypatch):
     state = {'off': False, 'showing': True, 'opened': [], 'woke': 0}
+    monkeypatch.setattr(A, 'busy', lambda seconds: None)      # never write the real keeper note in tests
     monkeypatch.setattr(A, 'tv_is_off', lambda: state['off'])
     monkeypatch.setattr(A, 'tv_showing', lambda app, wait: state['showing'])
     monkeypatch.setattr(A, 'tv_open', lambda app: state['opened'].append(app) or True)
