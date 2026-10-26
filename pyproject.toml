@@ -1,0 +1,29 @@
+[tool.ruff]
+line-length = 180
+target-version = "py312"
+extend-exclude = ["frame-launcher"]
+
+[tool.ruff.lint]
+# pyflakes (real bugs: undefined names, unused imports), pycodestyle errors/warnings,
+# bugbear (likely bugs), and pylint's error class.
+select = ["F", "E", "W", "B", "PLE"]
+ignore = [
+    "E402",   # imports after sys.path setup are deliberate in the voice scripts
+    "E731",   # small lambdas for TV tool callbacks read better inline
+]
+
+[tool.ruff.lint.per-file-ignores]
+# listen()/learn_voice() are defined and called within the same pass of main's loop, so they always
+# see that pass's `noise` and `last` (checked 26 Oct): late binding is intended there.
+"voice/assistant.py" = ["B023"]
+# Claude's prompts are prose: long lines there are paragraphs, not code.
+"voice/brain.py" = ["E501"]
+"voice/review.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["voice"]
+omit = ["voice/pair_tv.py"]

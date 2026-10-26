@@ -115,7 +115,7 @@ class Spotify:
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
             detail = e.read()[:300].decode('utf-8', 'replace')
-            raise RuntimeError(f'Spotify {e.code}: {detail}')
+            raise RuntimeError(f'Spotify {e.code}: {detail}') from e
 
     def search(self, query, kind):
         """kind: track, artist, album or playlist. Returns (uri, description) of the best match."""

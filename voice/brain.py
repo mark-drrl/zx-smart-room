@@ -380,7 +380,7 @@ class Brain:
                       '\n'.join(f'[{t}] Mark: {q[:160]} | You: {a[:200]}' for t, q, a in recent))
         lessons = self.memory.lessons() if self.memory else []
         if lessons:
-            extra += '\n\nLessons from past mistakes (follow them):\n' + '\n'.join('- ' + l for l in lessons)
+            extra += '\n\nLessons from past mistakes (follow them):\n' + '\n'.join('- ' + ln for ln in lessons)
         blocks.append({'type': 'text', 'text': extra})
         return blocks
 
@@ -416,9 +416,11 @@ class Brain:
                         if event.type == 'text':
                             if opener is not None:          # still deciding about the opening words
                                 opener += event.text
-                                m = OPENER.match(opener)
-                                if m is None and len(opener) < 24:
+                                # decide only once the whole opening is in: it streams in pieces
+                                # ("Ha," then " okay."), and deciding on "Ha," let "Ha, okay." through
+                                if len(opener) < 24 and not re.search(r'[.!?]\s|[.!?]$', opener):
                                     continue
+                                m = OPENER.match(opener + ' ')
                                 if m and _norm(m.group(1)) in used_openers:
                                     opener = opener[m.end():]   # said that way recently: skip it
                                 piece, opener = opener, None

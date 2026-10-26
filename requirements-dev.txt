@@ -1,0 +1,7 @@
+# For tests, lint and coverage (CI installs only what the tests need, see .github/workflows/ci.yml).
+pytest==9.1.1
+pytest-cov
+ruff
+# Used only for debugging tools in the scratchpad (webcam view of the TV, icons):
+opencv-python==5.0.0.93
+pillow==13.0.0

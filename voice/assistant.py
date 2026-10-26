@@ -430,10 +430,10 @@ def parse(text):
     # Art Mode first, so "turn on art mode" isn't read as "turn on the TV"
     if re.search(r'\bart(work)?\b|\bframe\s+mode\b', t):
         return go_art
-    if re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+(the\s+)?{tv}?\s*on\b', t) or re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+on\b', t) \
-            or re.search(rf'\bwake\b', t) or re.search(rf'\b{tv}\s+on\b', t):
+    if re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+(the\s+)?{tv}?\s*on\b', t) or re.search(r'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+on\b', t) \
+            or re.search(r'\bwake\b', t) or re.search(rf'\b{tv}\s+on\b', t):
         return turn_on
-    if re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+(the\s+)?{tv}?\s*off\b', t) or re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+off\b', t) \
+    if re.search(rf'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+(the\s+)?{tv}?\s*off\b', t) or re.search(r'\b(turn(?:ed|s)?|switch(?:ed|es)?|power(?:ed)?)\s+off\b', t) \
             or re.search(rf'\b{tv}\s+off\b', t) or re.search(r'\b(shut\s+down|good\s*night)\b', t):
         if re.search(r'\b(completely|fully|all the way|totally|properly|shut\s+down|power\s+off)\b', t):
             return turn_off_fully
@@ -763,7 +763,7 @@ def tv_status():
         apps = list(dict(APPS.values()).items())          # unique (title, id) pairs, asked all at once
         with ThreadPoolExecutor(len(apps)) as pool:
             shown = list(pool.map(lambda a: tv_showing(a[1], 0), apps))
-        on_screen = [title for (title, _), yes in zip(apps, shown) if yes]
+        on_screen = [title for (title, _), yes in zip(apps, shown, strict=True) if yes]
         parts.append(f'{on_screen[0]} is on screen.' if on_screen else 'No known app is on screen.')
     except Exception:
         pass
@@ -1362,7 +1362,7 @@ def main():
                       "then say it back in your normal voice.", interruptible=False)
             clips = []
             for phrase in ENROL_PHRASES:
-                for attempt in range(2):
+                for _attempt in range(2):
                     voice.say(phrase, interruptible=False)
                     voice.wake_sound()
                     time.sleep(0.35)

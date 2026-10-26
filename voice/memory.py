@@ -34,7 +34,7 @@ class Memory:
     def facts(self):
         try:
             with open(self.facts_file, encoding='utf-8') as f:
-                return [l[2:].strip() for l in f if l.startswith('- ') and l[2:].strip()]
+                return [ln[2:].strip() for ln in f if ln.startswith('- ') and ln[2:].strip()]
         except OSError:
             return []
 
@@ -57,7 +57,7 @@ class Memory:
         with self.lock:
             with open(self.facts_file, encoding='utf-8') as f:
                 lines = f.readlines()
-            keep = [l for l in lines if not (l.startswith('- ') and about in l.lower())]
+            keep = [ln for ln in lines if not (ln.startswith('- ') and about in ln.lower())]
             removed = len(lines) - len(keep)
             if removed:
                 with open(self.facts_file, 'w', encoding='utf-8') as f:
@@ -67,7 +67,7 @@ class Memory:
     def lessons(self):
         try:
             with open(self.lessons_file, encoding='utf-8') as f:
-                return [l[2:].strip() for l in f if l.startswith('- ') and l[2:].strip()]
+                return [ln[2:].strip() for ln in f if ln.startswith('- ') and ln[2:].strip()]
         except OSError:
             return []
 
@@ -77,11 +77,11 @@ class Memory:
             return 'Nothing to learn.'
         with self.lock:
             existing = self.lessons()
-            if lesson.lower() in (l.lower().split(' (')[0] for l in existing):
+            if lesson.lower() in (ln.lower().split(' (')[0] for ln in existing):
                 return 'Already learned.'
             lines = existing[-(MAX_LESSONS - 1):] + [f'{lesson} ({source}, {time.strftime("%d %b")})']
             with open(self.lessons_file, 'w', encoding='utf-8') as f:
-                f.write(LESSONS_HEADER + ''.join(f'- {l}\n' for l in lines))
+                f.write(LESSONS_HEADER + ''.join(f'- {ln}\n' for ln in lines))
         return 'Lesson saved.'
 
     def recent(self, n=20, days=2):

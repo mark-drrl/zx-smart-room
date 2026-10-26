@@ -12,7 +12,6 @@ the app stopped, Wi-Fi dropped), the laptop mic takes over again.
 import socket
 import struct
 import threading
-import time
 
 import numpy as np
 

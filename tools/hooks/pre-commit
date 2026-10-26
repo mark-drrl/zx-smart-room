@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs before every commit: blocks it if lint or tests fail, or if a key looks like it's being committed.
+# Install once:  git config core.hooksPath tools/hooks
+PY="/c/Users/markd/AppData/Local/Programs/Python/Python312/python.exe"
+[ -x "$PY" ] || PY=python
+
+# 1. secrets: API-key-looking strings in staged changes
+if git diff --cached -U0 | grep -E '^\+' | grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}|sk_[a-f0-9]{40,}|xi-api-key.{0,5}[A-Za-z0-9]{30,}|_API_KEY=[A-Za-z0-9_-]{16,}|Bearer [A-Za-z0-9._-]{30,}'; then
+  echo "pre-commit: this commit looks like it contains an API key. Keys belong in Windows Credential Manager."
+  exit 1
+fi
+# 2. files that must never be committed
+if git diff --cached --name-only | grep -qE '(^|/)(corelynx\.env|tv-token\.txt|voiceprint\.npz)$'; then
+  echo "pre-commit: a secret file is staged (corelynx.env / tv-token.txt / voiceprint.npz)."
+  exit 1
+fi
+# 3. lint and tests
+"$PY" -m ruff check voice tests -q || { echo "pre-commit: lint failed"; exit 1; }
+"$PY" -m pytest -q -x --no-header -p no:cacheprovider > /dev/null 2>&1 || { echo "pre-commit: tests failed (run: python -m pytest)"; exit 1; }
+exit 0

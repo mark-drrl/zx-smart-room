@@ -135,16 +135,16 @@ def main():
             output_config={'effort': 'medium'},
             messages=[{'role': 'user', 'content': PROMPT.format(
                 rules=SYSTEM.format(name='Zephyr'),
-                lessons='\n'.join('- ' + l for l in memory.lessons()) or '(none yet)',
+                lessons='\n'.join('- ' + ln for ln in memory.lessons()) or '(none yet)',
                 metrics=json.dumps(metrics, indent=1), log=condensed(rows))}])
         block = next(b for b in response.content if b.type == 'tool_use')
         review = block.input
 
-    added = [l for l in review['lessons'][:5] if memory.add_lesson(l, source='review') == 'Lesson saved.']
+    added = [ln for ln in review['lessons'][:5] if memory.add_lesson(ln, source='review') == 'Lesson saved.']
     with open(os.path.join(reports, day + '.md'), 'w', encoding='utf-8') as f:
         f.write(f'# Zephyr review {day}\n\n{review["summary"]}\n\n## Measurements (last {hours:g} h)\n\n')
         f.write('| | |\n|---|---|\n' + ''.join(f'| {k} | {v} |\n' for k, v in metrics.items()))
-        f.write('\n## New lessons\n\n' + (''.join(f'- {l}\n' for l in added) or '- none\n'))
+        f.write('\n## New lessons\n\n' + (''.join(f'- {ln}\n' for ln in added) or '- none\n'))
         f.write('\n## Ideas for code changes\n\n' + (''.join(f'- {c}\n' for c in review['code_ideas'][:5]) or '- none\n'))
     print(f'Review written: {os.path.join(reports, day + ".md")} ({len(added)} new lessons)')
 
