@@ -70,11 +70,11 @@ if ($up -and (Test-Health)) {
     exit 0
 }
 
-Write-Host "6/6  Zephyr is not healthy on $commit: rolling back." -ForegroundColor Red
+Write-Host "6/6  Zephyr is not healthy on ${commit}: rolling back." -ForegroundColor Red
 if (-not $lastGood) { Write-Host 'No earlier good deployment to roll back to: check voice\assistant.log.' -ForegroundColor Red; exit 1 }
 git checkout $lastGood -- voice
 if ((Restart-Zephyr) -and (Test-Health)) {
-    Write-Host "Rolled back to $lastGood: Zephyr is up on the last good code." -ForegroundColor Yellow
+    Write-Host "Rolled back to ${lastGood}: Zephyr is up on the last good code." -ForegroundColor Yellow
     Write-Host "The working folder now holds $lastGood's voice\ files; fix the problem on $commit, then 'git checkout HEAD -- voice' and deploy again." -ForegroundColor Yellow
 } else {
     Write-Host "Rollback to $lastGood didn't come up healthy either: check voice\assistant.log." -ForegroundColor Red
