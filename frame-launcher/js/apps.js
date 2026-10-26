@@ -19,5 +19,5 @@ var APPS = [
   { title: 'Apple TV',    tizenId: 'com.samsung.tv.aria-video', hubId: '3201807016597', area: 'at', tint: '#B9C6E4' },
   { title: 'Gallery',     tizenId: 'com.samsung.tv.gallery',    hubId: '3201710015037', area: 'ga', tint: '#FF3C8A' },
   { title: 'Browser',     tizenId: 'org.tizen.browser',         hubId: '3202010022079', area: 'br', tint: '#5B5CF6' },
-  { title: 'Google Meet', tizenId: 'IewQEY143t.GoogleDuoWeb',   hubId: '3202008021439', area: 'mt', tint: '#00AC47' }
+  { title: 'Moonlight',   tizenId: 'MoonLightS.MoonlightWasm',  hubId: 'moonlight',     area: 'mt', tint: '#7C8A9E' }
 ];

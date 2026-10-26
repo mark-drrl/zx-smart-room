@@ -12,7 +12,8 @@ $BusyFile = Join-Path $PSScriptRoot '.zephyr-busy'   # Zephyr writes an end time
 
 # Every app on the Home screen (from frame-launcher\js\apps.js), by Smart Hub id.
 $Apps = @('xvvl3S1TT1.TizenTubeStandalone','3201907018807','3201910019365','3201606009684','3201807016597',
-          '3201710015037','3202010022079','3202008021439')
+          '3201710015037','3202010022079','3202008021439',
+          'MoonLightS.MoonlightWasm')
 
 function Write-Log($msg) {
     $line = '{0:yyyy-MM-dd HH:mm:ss}  {1}' -f (Get-Date), $msg

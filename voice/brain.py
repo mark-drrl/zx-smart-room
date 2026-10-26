@@ -51,7 +51,7 @@ else", or end with an offer of more help. Don't repeat his question back. Don't 
 - A follow-up question is fine when you genuinely want to know, but not every time.
 - Jokes: vary the kind (one-liners, puns, dry observations, a quick story, something about the room or the UAE), never two "Why did the..." in a row, and never one you've told recently."""
 
-APP_NAMES = ['Netflix', 'YouTube', 'Prime Video', 'Spotify', 'Apple TV', 'Gallery', 'Browser', 'Google Meet']
+APP_NAMES = ['Netflix', 'YouTube', 'Prime Video', 'Spotify', 'Apple TV', 'Gallery', 'Browser', 'Google Meet', 'Moonlight']
 REMOTE_KEYS = ['KEY_UP', 'KEY_DOWN', 'KEY_LEFT', 'KEY_RIGHT', 'KEY_ENTER', 'KEY_RETURN', 'KEY_HOME', 'KEY_MENU',
                'KEY_PLAY', 'KEY_PAUSE', 'KEY_STOP', 'KEY_FF', 'KEY_REWIND', 'KEY_VOLUP', 'KEY_VOLDOWN',
                'KEY_MUTE', 'KEY_CHUP', 'KEY_CHDOWN', 'KEY_SOURCE', 'KEY_INFO', 'KEY_GUIDE', 'KEY_CAPTION',

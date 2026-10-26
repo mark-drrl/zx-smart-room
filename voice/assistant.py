@@ -152,6 +152,8 @@ APPS = {
     'browser': ('Browser', '3202010022079'),
     'internet': ('Browser', '3202010022079'),
     'meet': ('Google Meet', '3202008021439'),
+    'moonlight': ('Moonlight', 'MoonLightS.MoonlightWasm'),   # the laptop's screen, streamed by Sunshine
+    'laptop': ('Moonlight', 'MoonLightS.MoonlightWasm'),
 }
 HOME_APP = 'FrameHome1.Home'
 
