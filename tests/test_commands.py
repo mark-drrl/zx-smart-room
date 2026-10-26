@@ -275,3 +275,19 @@ def test_good_night_puts_the_screen_timeout_back(monkeypatch, tmp_path):
     assert timeout['now'] == 0
     A.restore_screen_timeout()                  # nothing left to put back
     assert timeout['now'] == 0
+
+
+@pytest.mark.parametrize('heard, command', [
+    ('Let her go home.', 'go home'),
+    ('With effort, go home.', 'go home'),
+    ('Is that fair? Good night.', 'Good night'),
+    ('Nefer, what time is it?', 'what time is it'),
+])
+def test_misheard_name_at_the_start_still_counts(heard, command):
+    assert A.NAME_AT_START.search(heard) or A.NAME_LOOSE.search(heard)
+    assert A.without_name(heard) == command
+
+
+def test_everyday_words_later_in_a_sentence_are_not_the_name():
+    assert not A.NAME_AT_START.search('you should let her go home')
+    assert A.without_name('you should let her go home') == 'you should let her go home'

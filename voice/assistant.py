@@ -135,10 +135,16 @@ TOKEN_FILE = os.path.join(HERE, 'tv-token.txt')
 NAME = ENV.get('WAKE_NAME', 'Zephyr').strip() or 'Zephyr'
 NAME_SPELLINGS = {
     'zephyr': ['zephyr', 'zephyrs', 'zefir', 'zephir', 'zafir', 'zephire', 'sephir', 'zeffer', 'zephyra',
-               'zephy', 'zeffir', 'zafer', 'zefer', 'zapper', 'zephyrt', 'jeffrey', 'suffer', 'sefer', 'sapphire'],     # how Corelynx has misheard it
+               'zephy', 'zeffir', 'zafer', 'zefer', 'zapper', 'zephyrt', 'jeffrey', 'suffer', 'sefer', 'sapphire',
+               'nefer', 'zappa', 'zepher'],     # how Corelynx has misheard it
     'jarvis': ['jarvis', "jarvis's", 'javis', 'jarvas', 'jervis', 'charvis', 'harvis', 'harvest', 'garvis', 'travis'],
 }.get(NAME.lower(), [NAME.lower()])
 NAME_LOOSE = re.compile(r"\b(hey|hi|okay|ok)?\s*(" + '|'.join(map(re.escape, NAME_SPELLINGS)) + r")\b", re.I)
+# Mishearings that are everyday words ("Let her go home", "With effort, go home", "Is that fair? Good
+# night", 27 Oct): they only count as the name at the very start, where the local spotter heard it.
+NAME_AT_START = re.compile(r"^\W*(hey\s+|hi\s+|okay\s+|ok\s+)?(" + '|'.join({
+    'zephyr': [r'is\s+that\s+(fair|for)', r'with\s+effort', r'let\s+her', r'just\s+for'],
+}.get(NAME.lower(), [r'(?!x)x'])) + r")\b[\s,.!?]*", re.I)
 USE_HEY_JARVIS = NAME.lower() == 'jarvis'     # the openWakeWord model only knows "Hey Jarvis"
 
 # Apps the assistant can open: spoken names -> Smart Hub app id (same ids as the Home launcher).
@@ -469,7 +475,7 @@ def parse(text):
     """Work out the command without doing it: returns a function to call, or None."""
     t = text.lower()
     t = re.sub(r"[^\w\s']", ' ', t)
-    t = NAME_LOOSE.sub(' ', t)
+    t = NAME_LOOSE.sub(' ', NAME_AT_START.sub(' ', t))
     t = re.sub(r'\s+', ' ', t).strip()
     t = re.sub(r'\bt\s+v\b', 'tv', t)     # Corelynx sometimes writes "T V"
     if len(t.split()) <= 6:                # a scene said on its own, not "good morning, how are you today"
@@ -541,7 +547,7 @@ def in_background_if_off(job, waking_msg):
 
 def without_name(text):
     """The words after the assistant's name, e.g. "Zephyr, what's on?" -> "what's on?"."""
-    return NAME_LOOSE.sub(' ', text).strip(' ,.!?')
+    return NAME_LOOSE.sub(' ', NAME_AT_START.sub(' ', text)).strip(' ,.!?')
 
 
 # ---------------------------------------------------------------- full remote control (for Claude)
@@ -1647,7 +1653,7 @@ def main():
                     voice.say("I'm back.")
                 continue
             action = parse(text)
-            name_in_text = bool(NAME_LOOSE.search(text))
+            name_in_text = bool(NAME_LOOSE.search(text) or NAME_AT_START.search(text))
             if not sure and not name_in_text:
                 # the name wasn't really said (TV, music, people talking): stay silent
                 log.info(f'name not in transcript (spotter {spotter.conf:.2f}); ignored')
