@@ -87,6 +87,7 @@ STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (fo
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
 PHONE = None                      # the phone mic, once main() has started it
+SPEAKERPHONE = False              # set in main(): the mic is a speakerphone with echo cancellation
 SOUND_UNTIL = 0.0                 # while the wake sound plays, the mic hears it: not your speech
 FOLLOW_UP_S = 5.0                 # after a chat reply, keep listening this long for a follow-up
 
@@ -1223,13 +1224,19 @@ def main():
     barge_frames = queue.Queue()
     def route(f):
         (frames if mic['to'] == 'main' else barge_frames).put(f)
-    # The laptop mic is quiet after its own noise suppression: a modest digital boost, clipped
-    # so loud speech can't distort.
+    # Mic and speaker: MIC_DEVICE / SPEAKER_DEVICE in corelynx.env (part of the name, e.g. AIRHUG),
+    # else Windows' defaults. A speakerphone (anything but the laptop's own mic array) has its own
+    # level control and echo cancellation: no digital boost, it beats the phone mic, and it can keep
+    # listening while her chime plays.
+    global SPEAKERPHONE
+    sd.default.device = (pick_device(ENV.get('MIC_DEVICE'), 'input'), pick_device(ENV.get('SPEAKER_DEVICE'), 'output'))
+    SPEAKERPHONE = 'microphone array' not in sd.query_devices(sd.default.device[0])['name'].lower()
+    gain = 1 if SPEAKERPHONE else MIC_GAIN    # the laptop mic is quiet after its own noise suppression
     phone = None
     def on_audio(data, n, t, s):
-        if phone and phone.connected:
+        if phone and phone.connected and not SPEAKERPHONE:
             return                        # the phone is the mic right now
-        route(np.clip(data[:, 0].astype(np.int32) * MIC_GAIN, -32768, 32767).astype(np.int16))
+        route(np.clip(data[:, 0].astype(np.int32) * gain, -32768, 32767).astype(np.int16))
     stream = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=FRAME, callback=on_audio)
     # Android phone as the mic (AndroidMic app, Wi-Fi): used whenever it's connected. Its audio
     # follows the laptop mic's on/off, so Zephyr never hears itself through the phone either.
@@ -1243,7 +1250,8 @@ def main():
         log.info(f'phone mic off: {e}')
     stream.start()
     log.info(f'{NAME} listening on "{sd.query_devices(sd.default.device[0])["name"]}"')
-    log.info(f'replies play on "{sd.query_devices(sd.default.device[1])["name"]}"')
+    log.info(f'replies play on "{sd.query_devices(sd.default.device[1])["name"]}"' +
+             (' (speakerphone: echo cancelled, phone mic not needed)' if SPEAKERPHONE else ''))
     # Interrupting: while she talks, a second spotter listens for her name only.
     barge_spotter = NameSpotter(spotter.model)
     def watch_for_barge_in():
@@ -1511,6 +1519,20 @@ def speech_detector():
     return _vad
 
 
+def pick_device(name_part, kind):
+    """The audio device whose name contains name_part (e.g. "AIRHUG"), or Windows' default if it
+    isn't plugged in. kind: 'input' or 'output'."""
+    default = sd.default.device[0 if kind == 'input' else 1]
+    if not name_part:
+        return default
+    channels = 'max_input_channels' if kind == 'input' else 'max_output_channels'
+    for i, d in enumerate(sd.query_devices()):
+        if d[channels] > 0 and name_part.lower() in d['name'].lower() and d['hostapi'] == 0:
+            return i
+    log.info(f'{kind} device "{name_part}" not found; using the default')
+    return default
+
+
 def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=None, finished=None, dangling=None):
     """Collect audio until you've finished: a pause of END_SILENCE_S, or a shorter QUICK_END_S
     pause once the live transcript shows a complete sentence, or the time limit.
@@ -1527,7 +1549,7 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
         command.append(f)
         if on_frame:
             on_frame(f)                                  # live-stream it while still recording
-        if time.time() < SOUND_UNTIL and not (PHONE and PHONE.connected):
+        if time.time() < SOUND_UNTIL and not SPEAKERPHONE and not (PHONE and PHONE.connected):
             skipped += 1                                 # the laptop mic hears the wake sound: don't judge it
             continue
         vad.accept_waveform(f.astype(np.float32) / 32768)
