@@ -186,3 +186,31 @@ def test_rhythm_adapts_to_how_fast_you_talk():
     assert fast.end_silence(True) < slow.end_silence(True)
     assert 0.45 <= fast.end_silence(False) and slow.end_silence(True) <= 1.2   # never extreme
     assert fast.voice_speed() > 1.0 > slow.voice_speed() >= 0.95
+
+
+def test_pause_after_the_name_does_not_end_the_request():
+    """'Zephyr,' ... 0.7 s pause ... 'volume at ten.' must be heard in full (cut at 0.6 s on 26 Oct)."""
+    import queue
+    sec = A.FRAME / A.RATE
+
+    class FakeVAD:
+        def __init__(self, pattern): self.pattern, self.i = pattern, -1
+        def reset(self): pass
+        def accept_waveform(self, x): self.i += 1
+        def is_speech_detected(self): return self.pattern[min(self.i, len(self.pattern) - 1)]
+
+    pattern = [False] * int(0.7 / sec) + [True] * int(1.0 / sec) + [False] * int(2.0 / sec)
+    q = queue.Queue()
+    for _ in pattern:
+        q.put(A.np.zeros(A.FRAME, A.np.int16))
+    name = [A.np.zeros(A.FRAME, A.np.int16)] * 10          # the audio holding "Zephyr"
+    A._vad = FakeVAD(pattern)
+    cmd, heard = A.record_command(q, name, 300.0, giveup=2.0, finished=lambda: True)
+    A._vad = None
+    A.RHYTHM.gaps.clear(); A.RHYTHM.rates.clear()
+    assert heard and (len(cmd) - len(name)) * sec >= 1.6   # waited through the 0.7 s pause and heard the 1 s request
+
+
+def test_silence_announcements_are_not_spoken():
+    assert A.speakable("That's a fragment with no clear request, so I'll stay quiet.") == ''
+    assert A.speakable('Leave the lights on, I like them.') != ''

@@ -40,6 +40,7 @@ PREROLL_FRAMES = 25               # keep ~2 s from before the trigger: "<name>, 
 MAX_COMMAND_S = 20.0              # long directions fit (9 s cut sentences off on 22 Oct)
 END_SILENCE_S = 0.6               # pause that ends a sentence
 QUICK_END_S = 0.3                 # ...or this, once the live transcript shows a finished sentence
+MIN_REQUEST_S = 0.3               # speech needed after the name before a pause can end the turn
 LONG_TALK_S = 2.5                 # talking longer than this = giving directions: allow thinking pauses
 LONG_PAUSE_S = 1.0                # ...so it takes this much silence to end, and no quick end
 
@@ -848,9 +849,16 @@ def handle(text):
 
 # ---------------------------------------------------------------- speech
 
+SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this)( one)? (alone|there)|"
+                         r"(that'?s|this is|just) a fragment|nothing for me|not (meant )?for me|no clear request|"
+                         r"i'?ll (leave|skip) (it|that)", re.I)
+
+
 def speakable(text):
-    """Never read out stage directions: Claude sometimes writes "[no response]" instead of nothing."""
-    return re.sub(r'\[[^\]]*\]|\([^)]*no response[^)]*\)', '', text, flags=re.I).strip()
+    """Never read out stage directions: Claude sometimes writes "[no response]" instead of nothing,
+    or announces that it will stay quiet ("That's a fragment, so I'll stay quiet") - not said either."""
+    text = re.sub(r'\[[^\]]*\]|\([^)]*no response[^)]*\)', '', text, flags=re.I).strip()
+    return '' if SILENT_NOTE.search(text) else text
 
 
 class ElevenLabs:
@@ -1392,7 +1400,7 @@ def main():
             brain.warm()                  # connect to Claude while you're still talking
         try:
             if by_name:
-                text, heard_speech = listen(list(history), 1.2, duck=sure and not paused)
+                text, heard_speech = listen(list(history), 2.0, duck=sure and not paused)   # people pause after the name
             else:
                 text, heard_speech = listen(list(history)[-PREROLL_FRAMES:], NO_SPEECH_GIVEUP_S, duck=sure and not paused)
             if last['rejected']:
@@ -1541,9 +1549,8 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
     sec = FRAME / RATE
     command = list(preroll)
     vad = speech_detector()
-    vad.reset()
-    for f in preroll[-12:]:                              # ~1 s of context so the detector is settled
-        vad.accept_waveform(f.astype(np.float32) / 32768)
+    vad.reset()            # not primed with the audio before: that holds "Zephyr" itself, and the natural
+                           # pause after the name then looked like the end of the request (26 Oct)
     heard_speech, quiet, skipped, reason, talked = False, 0, 0, 'time limit', 0
     for n in range(1, int((MAX_COMMAND_S + 2) / sec) + 1):
         f = frames.get()
@@ -1557,8 +1564,9 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
         if vad.is_speech_detected():
             if heard_speech and quiet:
                 RHYTHM.gaps.append(quiet * sec + 0.25)   # a pause inside your sentence: learn its length
-            heard_speech, quiet = True, 0
+            quiet = 0
             talked += 1
+            heard_speech = talked * sec >= MIN_REQUEST_S   # a real request, not a cough or the name's tail
         elif heard_speech:
             quiet += 1                                   # each counts on top of the detector's own 0.25 s
             long_talk = talked * sec > LONG_TALK_S       # directions, not a quick command
