@@ -726,12 +726,12 @@ def tv_setting(setting, value):
         match = next((m for m in PICTURE_MODES if v.lower() in m.lower() or m.lower() in v.lower()), None)
         if not match:
             return f'Picture modes are: {", ".join(PICTURE_MODES)}.'
-        return f'Picture mode: {match}.' if smartthings(f'custom.picturemode:setPictureMode("{match}")') else "Couldn't change the picture mode."
+        return f"{match} picture's on." if smartthings(f'custom.picturemode:setPictureMode("{match}")') else "Couldn't change the picture mode."
     if setting == 'sound_mode':
         match = next((m for m in SOUND_MODES if v.lower() in m.lower()), None)
         if not match:
             return f'Sound modes are: {", ".join(SOUND_MODES)}.'
-        return f'Sound mode: {match}.' if smartthings(f'custom.soundmode:setSoundMode("{match}")') else "Couldn't change the sound mode."
+        return f"{match} sound's on." if smartthings(f'custom.soundmode:setSoundMode("{match}")') else "Couldn't change the sound mode."
     if setting == 'channel':
         if v.lower() in ('up', 'next'):
             cmd = 'tvChannel:channelUp'

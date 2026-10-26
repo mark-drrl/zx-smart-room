@@ -18,8 +18,7 @@ spoken aloud by a text-to-speech voice, so:
 - Never say your reasoning, rules or lessons out loud (no "this is a fragment", no "acting on the sensible meaning"): just act or answer.
 - Answer in one or two short sentences, the way people actually talk. Never use lists, markdown, emojis or symbols.
 - Never comment on how a request was worded or transcribed; just act on the sensible meaning.
-- If the TV is off, it takes up to forty seconds to start: before turning it on or opening an app, say a short heads-up first ("One sec, waking the TV.").
-- After doing something on the TV, confirm in a few casual words ("Done, eight." "There you go.") with no commentary.
+- For TV, music and video actions, say nothing before or after the tool call: the result is spoken for you ("Volume's at 8.", "Playing Slow Mornings."). Saying it yourself makes you repeat it. Only add words if Mark also asked a question that the tool doesn't answer.
 - What you hear comes from speech-to-text and can be wrong: "volume to eight" often arrives as "volume twenty eight". If a number or request seems odd for the situation, pick the sensible reading (normal TV volume is about 5-20). If what you hear makes no sense, or sounds like Mark talking to someone else, output nothing at all (no text, not even brackets or a note).
 - Speech-to-text often turns "to" into a digit in front of a number: "volume 250" means fifty, "volume 330" means thirty, "volume 225" means twenty five. Silently drop the extra digit and set it: never explain the correction, never ask to confirm a volume.
 - People talk in the room: ignore anything said before your name or not meant for you, and never mention it.
@@ -28,7 +27,7 @@ spoken aloud by a text-to-speech voice, so:
 
 You can control the Samsung Frame TV in the room with your tools. When Mark asks for something \
 the TV can do, or clearly implies it ("I'm off to bed", "let's watch something"), use the tool, \
-then confirm in a few words. Only claim something happened if the tool result says it did. You are the TV's admin: you have everything the remote has (power, volume, mute, every button, apps), so do multi-step requests fully, step by step, instead of telling Mark to use the remote. You \
+and let its result speak for you. Only claim something happened if the tool result says it did. You are the TV's admin: you have everything the remote has (power, volume, mute, every button, apps), so do multi-step requests fully, step by step, instead of telling Mark to use the remote. You \
 cannot control lights or other devices yet; say so briefly if asked.
 
 You have a long-term memory (Mark's notes, kept in Obsidian). When Mark tells you something worth keeping (a preference, a plan, a name, a date) or asks you to remember something, save it with the remember tool as one short, self-contained fact; don't announce saving unless asked. Use forget when he asks you to forget something. Use what you remember naturally. When he corrects you, just fix it and quietly save the lesson with learn_lesson.
@@ -102,8 +101,8 @@ TOOLS = [
         'name': 'spotify_play',
         'description': ('Play music on the TV with Spotify (Premium): kind "track" for a song, "artist" for an artist, '
                         '"album", or "playlist" for moods and genres ("chill evening", "90s hip hop"). Opens Spotify '
-                        'on the TV and turns the TV on if needed; takes up to 15 seconds when Spotify is not already open, so say a short '
-                        'heads-up first ("Putting it on...").'),
+                        'on the TV and turns the TV on if needed; takes up to 15 seconds when Spotify is not already open '
+                        '(a short "Putting it on." is spoken automatically).'),
         'input_schema': {
             'type': 'object',
             'properties': {'query': {'type': 'string'},
@@ -262,6 +261,10 @@ SLOW_ACK = {'spotify_play': 'Putting it on.', 'youtube_play': 'Pulling it up.', 
 FAILED = re.compile(r"couldn'?t|can'?t|wouldn'?t|isn'?t|not connected|nothing found|no app|is off|failed|unknown", re.I)
 
 
+def _norm(text):
+    return ' '.join(re.sub(r"[^a-z0-9' ]", ' ', text.lower()).split())
+
+
 class Brain:
     def __init__(self, api_key, name, tv, memory=None):
         """tv: dict of callables {'on', 'off', 'art', 'home', 'open'(app_name)} returning a short status line.
@@ -379,6 +382,7 @@ class Brain:
         turn_start = len(self.history)
         self.history.append({'role': 'user', 'content': text})
         spoke = False
+        spoken_text = ''
         self.used_tools = False
 
         for _ in range(4):                       # at most a few tool round trips per turn
@@ -395,6 +399,7 @@ class Brain:
                     for event in stream:
                         if event.type == 'text':
                             spoke = True
+                            spoken_text += event.text
                             yield event.text
                     response = stream.get_final_message()
             except ValueError:
@@ -452,6 +457,9 @@ class Brain:
                 # speak it instead of asking Claude to word a confirmation (saves a round trip, ~1-2 s).
                 said = ' '.join(r['content'] for r in results)
                 self.history.append({'role': 'assistant', 'content': said})
+                already = _norm(spoken_text)
+                if spoke and (_norm(said) in already or any(w in already for w in ('playing', 'volume'))):
+                    return                           # she already said it: don't repeat herself
                 yield (' ' if spoke else '') + said
                 return
             if spoke:
