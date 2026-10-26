@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import queue
+import random
 import re
 import socket
 import ssl
@@ -153,7 +154,6 @@ APPS = {
     'internet': ('Browser', '3202010022079'),
     'meet': ('Google Meet', '3202008021439'),
     'moonlight': ('Moonlight', 'MoonLightS.MoonlightWasm'),   # the laptop's screen, streamed by Sunshine
-    'laptop': ('Moonlight', 'MoonLightS.MoonlightWasm'),
 }
 HOME_APP = 'FrameHome1.Home'
 
@@ -180,6 +180,16 @@ def busy(seconds):
             f.write(f'{until:.0f}')
     except (OSError, ValueError):
         pass
+
+
+def tv_close(app_id):
+    req = urllib.request.Request(f'http://{TV_IP}:8001/api/v2/applications/{app_id}', method='DELETE')
+    try:
+        urllib.request.urlopen(req, timeout=5).read()
+        return True
+    except Exception as e:
+        log.info(f'close {app_id} failed: {e}')
+        return False
 
 
 def tv_open(app_id):
@@ -460,6 +470,10 @@ def parse(text):
     t = NAME_LOOSE.sub(' ', t)
     t = re.sub(r'\s+', ' ', t).strip()
     t = re.sub(r'\bt\s+v\b', 'tv', t)     # Corelynx sometimes writes "T V"
+    if len(t.split()) <= 6:                # a scene said on its own, not "good morning, how are you today"
+        for pattern, scene in SCENES:
+            if pattern.search(t):
+                return scene
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
@@ -492,6 +506,8 @@ def parse(text):
 
 def quick_ack(action, text):
     """What she says the moment she understands a TV command, before it's done."""
+    if action in SCENE_ACKS:
+        return SCENE_ACKS[action]
     if action is turn_on:
         return 'Turning on the TV.'
     if action is turn_off:
@@ -509,7 +525,7 @@ def quick_ack(action, text):
 
 
 def failed(reply):
-    return bool(reply) and bool(re.search(r"couldn'?t|can'?t|isn'?t|no app|not paired|still on", reply, re.I))
+    return bool(reply) and bool(re.search(r"couldn'?t|can'?t|isn'?t|didn'?t|no app|not paired|still on|nothing found", reply, re.I))
 
 
 def in_background_if_off(job, waking_msg):
@@ -617,16 +633,17 @@ def press_keys(keys):
     return f'Pressed {", ".join(keys)}.'
 
 
-def youtube_find(query):
+def youtube_find(query, pick_random=False):
     """Top YouTube result for a search, via yt-dlp (no API key needed; ~2.3 s measured).
-    Skips Shorts so "play X" gets the real video."""
+    Skips Shorts so "play X" gets the real video. pick_random: a random long one (20+ min) from the
+    top 10 instead, so a scene feels different each time."""
     import yt_dlp
     with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True, 'skip_download': True, 'noprogress': True}) as y:
-        found = y.extract_info(f'ytsearch5:{query}', download=False).get('entries') or []
-    for e in found:
-        if e.get('id') and '/shorts/' not in (e.get('url') or ''):
-            return e
-    return found[0] if found else None
+        found = y.extract_info(f'ytsearch{10 if pick_random else 5}:{query}', download=False).get('entries') or []
+    videos = [e for e in found if e.get('id') and '/shorts/' not in (e.get('url') or '')]
+    if pick_random and videos:
+        return random.choice([e for e in videos if (e.get('duration') or 0) >= 1200] or videos)
+    return videos[0] if videos else (found[0] if found else None)
 
 
 YOUTUBE_APP = 'xvvl3S1TT1.TizenTubeStandalone'     # TizenTube (YouTube without ads)
@@ -652,7 +669,7 @@ def short_title(title):
     return t if len(t) >= 3 else (title or '')[:60]
 
 
-def youtube_play(query):
+def youtube_play(query, pick_random=False):
     """Search YouTube and play the top result in TizenTube. The search runs while TizenTube opens
     and the connection is made; the video is sent as soon as YouTube answers, not after a fixed
     wait. Measured on an open connection: search ~1.6 s + send ~1.7 s."""
@@ -666,7 +683,7 @@ def youtube_play(query):
         woke_tv = True
     yt = youtube()
     with ThreadPoolExecutor(1) as pool:
-        search = pool.submit(youtube_find, query)
+        search = pool.submit(youtube_find, query, pick_random)
         opening = not youtube_on_screen()
         if opening:
             tv_open(YOUTUBE_APP)
@@ -697,6 +714,102 @@ def youtube_control(action):
         return "YouTube didn't respond."
     return {'pause': 'Paused.', 'resume': 'Playing.', 'next': 'Next video.', 'previous': 'Went back.',
             'skip_ad': 'Skipped.'}.get(action, 'Done.')
+
+
+# ---------------------------------------------------------------- scenes: one phrase, several things
+
+MOONLIGHT_APP = 'MoonLightS.MoonlightWasm'
+SUNSHINE_INFO = 'http://localhost:47989/serverinfo'      # Sunshine, the laptop's streaming server
+FOREST_SEARCHES = ['cozy campfire in the forest ambience', 'crackling campfire forest night sounds',
+                   'campfire in the woods relaxing ambience', 'forest campfire crickets night ambience',
+                   'cozy camp fire by a forest lake ambience']
+MORNING_SEARCHES = ['boom bap jazzy hip hop mix', 'jazzy boom bap instrumental beats', 'jazz hop boom bap mix',
+                    'chill boom bap jazz rap instrumentals']
+
+
+def laptop_screens(on):
+    """The laptop screen and the UltraGear. Off is the same as Windows' own screen timeout, so any
+    mouse move or key wakes them; on is a one-pixel mouse nudge, which wakes them."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    if on:
+        user32.mouse_event(0x0001, 1, 0, 0, 0)                 # MOUSEEVENTF_MOVE, there and back
+        user32.mouse_event(0x0001, -1, 0, 0, 0)
+    else:
+        user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2)         # every window: WM_SYSCOMMAND, SC_MONITORPOWER, off
+
+
+def sunshine_streaming():
+    """True while Moonlight streams the laptop, False if not, None if Sunshine isn't running."""
+    try:
+        with urllib.request.urlopen(SUNSHINE_INFO, timeout=2) as r:
+            return '<currentgame>0<' not in r.read().decode('utf-8', 'replace')
+    except Exception:
+        return None
+
+
+def forest_mode():
+    reply = youtube_play(random.choice(FOREST_SEARCHES), pick_random=True)
+    if not failed(reply):
+        set_volume(15)
+    return reply
+
+
+def good_morning():
+    laptop_screens(True)
+    return youtube_play(random.choice(MORNING_SEARCHES), pick_random=True)
+
+
+def good_night():
+    """Everything dark: the laptop screens, and the TV fully off (Art Mode would light up again
+    whenever its motion sensor saw someone in the night)."""
+    laptop_screens(False)
+    return turn_off_fully()
+
+
+def mirror_laptop():
+    """The laptop on the TV: Moonlight, streaming this laptop's Desktop from Sunshine. The TV ignores
+    launch data sent from outside (deep links, tried 27 Oct), so this presses the buttons instead: on
+    Moonlight's start screen Add host comes first and the laptop is to its right. ~23 s measured."""
+    busy(45)
+    streaming = sunshine_streaming()
+    if streaming is None:
+        return "Sunshine isn't running on the laptop, so there's nothing to stream."
+    if tv_is_off():
+        woke = turn_on()
+        if failed(woke):
+            return woke
+    if streaming:
+        tv_open(MOONLIGHT_APP)
+        return 'Your laptop is on the TV.'
+    if app_state(MOONLIGHT_APP)['running']:      # start it fresh, so it begins on its host list
+        tv_close(MOONLIGHT_APP)
+        time.sleep(2)
+    tv_open(MOONLIGHT_APP)
+    if not tv_showing(MOONLIGHT_APP, 15):
+        return "I couldn't open Moonlight."
+    time.sleep(5)                                # it finds the laptop on the network
+    REMOTE.press(['KEY_RIGHT', 'KEY_ENTER'])     # the laptop...
+    time.sleep(4)
+    REMOTE.press(['KEY_ENTER'])                  # ...and its Desktop
+    end = time.time() + 20
+    while time.time() < end:
+        if sunshine_streaming():
+            return 'Your laptop is on the TV.'
+        time.sleep(1)
+    return "Moonlight is open, but the stream didn't start."
+
+
+SCENES = [
+    (re.compile(r'\b(forest|campfire|camp fire)\s+mode\b'), forest_mode),
+    (re.compile(r'\bgood\s*morning\b'), good_morning),
+    (re.compile(r'\bgood\s*night\b'), good_night),
+    (re.compile(r'\b(mirror|cast|share|stream)\s+(my\s+|the\s+)?(laptop|computer|pc|desktop|screen)\b|'
+                r'\b(put|show|open)\s+(my\s+|the\s+)?(laptop|computer|pc|desktop)\b'), mirror_laptop),
+]
+SCENE_BY_NAME = {'forest': forest_mode, 'morning': good_morning, 'night': good_night, 'mirror': mirror_laptop}
+SCENE_ACKS = {forest_mode: 'Forest mode. Lighting the fire.', good_morning: 'Good morning!',
+              good_night: 'Good night.', mirror_laptop: 'Putting your laptop on the TV.'}
 
 
 SPOTIFY_APP = '3201606009684'
@@ -1256,6 +1369,8 @@ def main():
             'spotify_control': spotify_control,
             'youtube_control': youtube_control,
             'setting': tv_setting,
+            'scene': lambda name: SCENE_BY_NAME[name]() if name == 'night' else in_background_if_off(
+                SCENE_BY_NAME[name], f'The TV is starting up (about 30 seconds); {name} mode follows by itself.'),
             'youtube': lambda q: in_background_if_off(
                 lambda: youtube_play(q), f'The TV is starting up (about 30 seconds); "{q}" will play on YouTube once it is on.'),
         }, memory)

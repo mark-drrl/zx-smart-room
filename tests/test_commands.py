@@ -9,7 +9,6 @@ import assistant as A
     ('turn on the T V', 'turn_on'),
     ('turn off the TV', 'turn_off'),
     ('tv off', 'turn_off'),
-    ('good night', 'turn_off'),
     ('turn the TV off completely', 'turn_off_fully'),
     ('shut down the tv', 'turn_off_fully'),
     ('go home', 'go_home'),
@@ -19,6 +18,26 @@ import assistant as A
 def test_simple_tv_commands(said, expected):
     action = A.parse(said)
     assert action is not None and action.__name__ == expected
+
+
+@pytest.mark.parametrize('said, expected', [
+    ('Zephyr, forest mode', 'forest_mode'),
+    ('campfire mode please', 'forest_mode'),
+    ('good morning', 'good_morning'),
+    ('Zephyr good night', 'good_night'),
+    ('goodnight', 'good_night'),
+    ('mirror my laptop', 'mirror_laptop'),
+    ('Zephyr, mirror my laptop to the TV', 'mirror_laptop'),
+    ('put my laptop on the tv', 'mirror_laptop'),
+])
+def test_scenes(said, expected):
+    action = A.parse(said)
+    assert action is not None and action.__name__ == expected
+    assert A.quick_ack(action, said) == A.SCENE_ACKS[action]
+
+
+def test_a_greeting_in_a_longer_sentence_is_not_a_scene():
+    assert A.parse('good morning Zephyr how are you doing today') is None
 
 
 def test_opening_an_app():

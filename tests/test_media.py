@@ -23,7 +23,7 @@ def tv(monkeypatch):
     monkeypatch.setattr(A, 'tv_showing', lambda app, wait: state['showing'])
     monkeypatch.setattr(A, 'youtube_on_screen', lambda: state['showing'])
     monkeypatch.setattr(A, 'tv_open', lambda app: state['opened'].append(app) or True)
-    monkeypatch.setattr(A, 'youtube_find', lambda q: {'id': 'vid1', 'title': '4K Campfire by the River - Relaxing | UHD'})
+    monkeypatch.setattr(A, 'youtube_find', lambda q, pick_random=False: {'id': 'vid1', 'title': '4K Campfire by the River - Relaxing | UHD'})
 
     def turn_on():
         state['woke'] += 1
@@ -68,7 +68,7 @@ def test_youtube_not_linked(tv, monkeypatch):
 
 def test_youtube_nothing_found(tv, monkeypatch):
     monkeypatch.setattr(A, 'youtube', lambda: FakeYouTube())
-    monkeypatch.setattr(A, 'youtube_find', lambda q: None)
+    monkeypatch.setattr(A, 'youtube_find', lambda q, pick_random=False: None)
     assert A.youtube_play('zzz') == 'Nothing found on YouTube for "zzz".'
 
 
@@ -181,3 +181,27 @@ def test_a_playing_tizentube_video_counts_as_youtube_on_screen(monkeypatch):
     assert not A.youtube_on_screen()
     states.clear()                                                      # and not if it isn't running
     assert not A.youtube_on_screen()
+
+
+def test_scene_search_picks_a_long_video(monkeypatch):
+    """Scenes take a random long video (20+ min) from the results, never a Short."""
+    import sys
+    import types
+
+    class FakeYDL:
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, query, download):
+            return {'entries': [{'id': 'short', 'url': 'https://youtube.com/shorts/x', 'duration': 3000},
+                                {'id': 'clip', 'url': 'https://youtube.com/watch?v=clip', 'duration': 300},
+                                {'id': 'long', 'url': 'https://youtube.com/watch?v=long', 'duration': 7200}]}
+    monkeypatch.setitem(sys.modules, 'yt_dlp', types.SimpleNamespace(YoutubeDL=FakeYDL))
+    assert all(A.youtube_find('campfire', pick_random=True)['id'] == 'long' for _ in range(10))
+    assert A.youtube_find('campfire')['id'] == 'clip'

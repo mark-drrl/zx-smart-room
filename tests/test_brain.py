@@ -4,7 +4,7 @@ import pytest
 import brain as B
 
 TV_KEYS = ['on', 'off', 'off_fully', 'art', 'home', 'open', 'volume', 'mute', 'keys', 'status', 'youtube',
-           'youtube_control', 'spotify', 'spotify_control', 'setting']
+           'youtube_control', 'spotify', 'spotify_control', 'setting', 'scene']
 
 
 def make_brain(calls):
@@ -30,7 +30,7 @@ def test_fast_tools_exist():
 
 
 @pytest.mark.parametrize('tool, args', [
-    ('tv_power', {'state': 'on'}), ('tv_power', {'state': 'off_fully'}),
+    ('tv_power', {'state': 'on'}), ('tv_power', {'state': 'off_fully'}), ('scene', {'name': 'forest'}),
     ('tv_volume', {'mode': 'set', 'amount': 12}), ('tv_volume', {'mode': 'down', 'amount': 3}),
     ('tv_mute', {'muted': True}), ('tv_remote', {'keys': ['KEY_UP', 'KEY_ENTER']}),
     ('tv_open_app', {'app': 'YouTube'}), ('spotify_play', {'query': 'September', 'kind': 'track'}),
@@ -44,7 +44,7 @@ def test_valid_tool_calls_reach_the_tv(tool, args):
 
 
 @pytest.mark.parametrize('tool, args', [
-    ('tv_power', {'state': 'explode'}), ('tv_volume', {'mode': 'set', 'amount': 'loud'}),
+    ('tv_power', {'state': 'explode'}), ('scene', {'name': 'disco'}), ('tv_volume', {'mode': 'set', 'amount': 'loud'}),
     ('tv_remote', {'keys': ['rm -rf']}), ('tv_remote', {'keys': []}), ('tv_open_app', {'app': 'Netflux'}),
     ('spotify_play', {'query': '', 'kind': 'track'}), ('tv_setting', {'setting': 'firmware', 'value': 'x'}),
     ('unknown_tool', {}), ('tv_mute', 'not a dict'), ('learn_lesson', {'lesson': '  '}),

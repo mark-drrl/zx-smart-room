@@ -51,6 +51,7 @@ else", or end with an offer of more help. Don't repeat his question back. Don't 
 - A follow-up question is fine when you genuinely want to know, but not every time.
 - Jokes: vary the kind (one-liners, puns, dry observations, a quick story, something about the room or the UAE), never two "Why did the..." in a row, and never one you've told recently."""
 
+SCENE_NAMES = ['forest', 'morning', 'night', 'mirror']
 APP_NAMES = ['Netflix', 'YouTube', 'Prime Video', 'Spotify', 'Apple TV', 'Gallery', 'Browser', 'Google Meet', 'Moonlight']
 REMOTE_KEYS = ['KEY_UP', 'KEY_DOWN', 'KEY_LEFT', 'KEY_RIGHT', 'KEY_ENTER', 'KEY_RETURN', 'KEY_HOME', 'KEY_MENU',
                'KEY_PLAY', 'KEY_PAUSE', 'KEY_STOP', 'KEY_FF', 'KEY_REWIND', 'KEY_VOLUP', 'KEY_VOLDOWN',
@@ -67,6 +68,20 @@ TOOLS = [
             'type': 'object',
             'properties': {'state': {'type': 'string', 'enum': ['on', 'off', 'off_fully']}},
             'required': ['state'],
+            'additionalProperties': False,
+        },
+        'strict': True,
+        'eager_input_streaming': True,
+    },
+    {
+        'name': 'scene',
+        'description': ('Run one of Mark\'s scenes. "forest": a random cozy campfire-in-the-forest video on YouTube at volume 15. '
+                        '"morning": wakes all the screens and plays jazzy boom-bap hip hop on YouTube. "night": the TV, laptop '
+                        'and monitor screens all off. "mirror": the laptop\'s screen on the TV through Moonlight.'),
+        'input_schema': {
+            'type': 'object',
+            'properties': {'name': {'type': 'string', 'enum': SCENE_NAMES}},
+            'required': ['name'],
             'additionalProperties': False,
         },
         'strict': True,
@@ -256,9 +271,9 @@ TOOLS = [
 
 
 # TV actions whose result is already a good spoken confirmation (see ask_stream's fast path)
-FAST_TOOLS = {'tv_power', 'tv_home', 'tv_open_app', 'tv_art_mode', 'tv_volume', 'tv_mute', 'tv_setting',
+FAST_TOOLS = {'scene', 'tv_power', 'tv_home', 'tv_open_app', 'tv_art_mode', 'tv_volume', 'tv_mute', 'tv_setting',
               'spotify_play', 'spotify_control', 'youtube_play', 'youtube_control'}
-SLOW_ACK = {'spotify_play': 'Putting it on.', 'youtube_play': 'Pulling it up.', 'tv_setting': 'Sure.'}
+SLOW_ACK = {'scene': 'On it.', 'spotify_play': 'Putting it on.', 'youtube_play': 'Pulling it up.', 'tv_setting': 'Sure.'}
 FAILED = re.compile(r"couldn'?t|can'?t|wouldn'?t|isn'?t|not connected|nothing found|no app|is off|failed|unknown", re.I)
 
 
@@ -293,6 +308,10 @@ class Brain:
             return self.tv[args['state']]()
         if tool_name == 'tv_art_mode':
             return self.tv['art']()
+        if tool_name == 'scene':
+            if args.get('name') not in SCENE_NAMES:
+                raise ValueError(f'name must be one of {SCENE_NAMES}')
+            return self.tv['scene'](args['name'])
         if tool_name == 'tv_home':
             return self.tv['home']()
         if tool_name == 'tv_open_app':
