@@ -3,13 +3,13 @@
 # Installed copy lives in C:\Program Files\Sunshine\config\ (admin-only) since it runs elevated.
 #
 # Leaving Moonlight only pauses the session (Sunshine keeps Desktop "running" so it can resume), so
-# "off" never ran and the screen stayed (27 Oct). "on" therefore also starts a watcher: once Moonlight
-# has been disconnected for 30 s it turns the screen off and restarts Sunshine, which ends the paused
-# session, so the next connect is a fresh start that runs "on" again.
+# "off" never ran and the screen stayed (27 Oct). "on" therefore also starts a watcher: as soon as
+# Moonlight disconnects it turns the screen off and restarts Sunshine, which ends the paused session,
+# so the next connect is a fresh start that runs "on" again.
 param([Parameter(Mandatory)][ValidateSet('on', 'off', 'watch')][string]$State)
 
 $SunshineLog = 'C:\Program Files\Sunshine\config\sunshine.log'
-$GraceSeconds = 30
+$GraceSeconds = 2                   # Mark wants it gone as soon as he leaves Moonlight
 
 function Set-Screen($on) {
     $screen = Get-PnpDevice -FriendlyName 'Virtual Display Driver' -ErrorAction SilentlyContinue
@@ -46,7 +46,7 @@ switch ($State) {
     'watch' {
         $started = (Get-Date).AddSeconds(-2)
         while ($true) {
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 1
             $last = Get-LastEvent $started
             if (-not $last -or $last.Kind -eq 'here') { continue }
             if ($last.Kind -eq 'quit') { exit }                 # quit from Moonlight: "off" has run
