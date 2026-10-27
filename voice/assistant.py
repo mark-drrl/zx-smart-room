@@ -1397,6 +1397,7 @@ class LiveSession:
     def __init__(self, ws):
         self.ws, self.ok = ws, True
         self.order, self.live, self.deltas = [], {}, {}
+        self.changed = time.time()                                  # when the transcript last moved
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self):
@@ -1408,6 +1409,8 @@ class LiveSession:
             t, uid = m.get('type'), m.get('utterance_id')
             if uid is not None and uid not in self.order:
                 self.order.append(uid)
+            if t in ('revision', 'final'):
+                self.changed = time.time()
             if t == 'revision':
                 self.live[uid] = f"{m.get('stable', '')} {m.get('tentative', '')}".strip()
             elif t == 'final':
@@ -1432,6 +1435,14 @@ class LiveSession:
         t = ' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip().lower()
         return bool(re.search(r"\b(to|at|the|a|an|and|on|for|of|uh|um|like|is|my|some|with|in|play|set|put|turn|"
                               r"that|which|who|so|but|because|or|if|when|about|from|into|than|just|maybe)[,]?$", t))
+
+    def settled(self):
+        """You've really stopped: the transcriber closed the last utterance, or the words haven't changed
+        for 0.8 s, and they don't stop mid-thought. "Zephyr, can you play uh" was cut off without this,
+        when the speech detector missed quiet speech but the transcript already had a full stop (27 Oct)."""
+        if not self.order or self.dangling():
+            return False
+        return self.order[-1] in self.deltas or time.time() - self.changed >= 0.8
 
     def sounds_finished(self):
         """The live transcript ends a sentence ("...volume to eight.") with words after the name.
@@ -1629,7 +1640,8 @@ def main():
             command, speech = record_command(frames, preroll, noise, giveup=giveup,
                                              on_frame=session.send if session else None,
                                              finished=session.sounds_finished if session else None,
-                                             dangling=session.dangling if session else None)
+                                             dangling=session.dangling if session else None,
+                                             settled=session.settled if session else None)
             mic['to'] = 'barge'           # don't listen to ourselves while we work and talk
             threading.Thread(target=DUCK.restore, daemon=True).start()
             # what was just said (plus ~1.5 s before, where the name usually is), for voice ID
@@ -1859,7 +1871,7 @@ def pick_device(name_part, kind):
     return default
 
 
-def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=None, finished=None, dangling=None):
+def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=None, finished=None, dangling=None, settled=None):
     """Collect audio until you've finished: a pause of END_SILENCE_S, or a shorter QUICK_END_S
     pause once the live transcript shows a complete sentence, or the time limit.
     Time is counted in audio frames (80 ms each), not by the clock."""
@@ -1896,7 +1908,7 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
             if not long_talk and quiet * sec >= QUICK_END_S - 0.25 and finished and finished():
                 reason = 'sentence done'
                 break
-        elif (n - skipped) * sec >= ALREADY_SAID_S and finished and finished():
+        elif (n - skipped) * sec >= ALREADY_SAID_S and finished and finished() and (settled is None or settled()):
             # "Zephyr volume at ten" in one breath: the spotter only fires once it's all said, so no new
             # speech follows; the live transcript already has it all. Was a 3.5 s wait every time (27 Oct).
             reason = 'already said'

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zephyr Console</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e4e0;
+    --ok: #1f8a4c; --end: #2a7ab0; --fail: #c4352b; --ign: #b07800; --miss: #8e44ad; --notyou: #7a7a80;
+    --chip: #f0f0ec; --accent: #5b5cf6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111113; --panel: #1a1a1d; --ink: #ececef; --muted: #9a9aa2; --line: #2a2a2f;
+            --ok: #4cc27f; --end: #5aa9dc; --fail: #ff6b5f; --ign: #e2a72e; --miss: #c38ce0; --notyou: #8d8d95;
+            --chip: #242428; --accent: #8a8bff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+           padding: 14px 20px 0; }
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
+  .dot.paused { background: var(--notyou); box-shadow: none; }
+  .spacer { flex: 1; }
+  button, input { font: inherit; color: inherit; }
+  .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 14px 0; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  nav .tab { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; cursor: pointer; color: var(--muted); }
+  nav .tab.on { color: var(--ink); border-color: var(--accent); }
+  nav input { margin-left: auto; margin-bottom: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+              padding: 5px 10px; min-width: 0; width: 220px; max-width: 100%; }
+  main { padding: 14px 20px 40px; max-width: 1100px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters button { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 11px; cursor: pointer; font-size: 13px; }
+  .filters button.on { border-color: var(--accent); color: var(--accent); }
+  .req { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 10px;
+         padding: 10px 14px; margin-bottom: 8px; }
+  .req.new { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); } to { box-shadow: none; } }
+  .row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .pill { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--c); }
+  .said { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+  .reply { color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+  .reply::before { content: "↳ "; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+  .chip { background: var(--chip); border-radius: 6px; padding: 1px 7px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip.warn { color: var(--fail); }
+  .why { color: var(--c); font-size: 12px; margin-top: 4px; }
+  audio { height: 28px; margin-top: 6px; max-width: 100%; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto;
+        font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+  .event { padding: 8px 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .event .time { margin-right: 8px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .done { --c: var(--ok); } .ended { --c: var(--end); } .failed { --c: var(--fail); } .ignored { --c: var(--ign); }
+  .missed { --c: var(--miss); } .rejected { --c: var(--notyou); } .listening { --c: var(--accent); }
+  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } nav input { width: 100%; margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>Zephyr</h1>
+    <span class="live"><span class="dot" id="dot"></span><span id="liveText">live</span></span>
+    <span class="spacer"></span>
+    <button class="btn" id="pause">Pause</button>
+  </div>
+  <div class="stats" id="stats"></div>
+  <nav>
+    <button class="tab on" data-tab="requests">Requests</button>
+    <button class="tab" data-tab="problems">Problems</button>
+    <button class="tab" data-tab="log">Raw log</button>
+    <input id="search" type="search" placeholder="Search…" aria-label="Search">
+  </nav>
+</header>
+<main>
+  <section id="requests">
+    <div class="filters" id="filters"></div>
+    <div id="list"></div>
+  </section>
+  <section id="problems" hidden><div id="events"></div></section>
+  <section id="log" hidden><pre id="raw"></pre></section>
+</main>
+<script>
+const LABEL = { done: 'Done', ended: 'Ended', failed: 'Failed', ignored: 'Ignored', missed: 'Missed', rejected: 'Not your voice', listening: 'Listening…' };
+const FILTERS = { all: () => true, done: r => r.status === 'done' || r.status === 'ended',
+  trouble: r => ['missed', 'ignored', 'failed'].includes(r.status), slow: r => (r.response_s || 0) >= 4 || r.ended_by === 'nothing said',
+  rejected: r => r.status === 'rejected' };
+const FILTER_NAMES = { all: 'All', done: 'Handled', trouble: 'Missed / ignored / failed', slow: 'Slow', rejected: 'Not your voice' };
+let tab = 'requests', filter = 'all', paused = false, seen = new Set(), first = true, data = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const key = r => `${r.day} ${r.time} ${r.said}`;
+
+function renderStats(s) {
+  const c = s.counts || {};
+  const cells = [
+    [s.success == null ? '–' : s.success + '%', 'handled (last 100)'],
+    [s.median_reply_s == null ? '–' : s.median_reply_s + ' s', 'median Claude reply'],
+    [c.missed || 0, 'missed'], [c.ignored || 0, 'ignored'], [c.failed || 0, 'failed'],
+    [c.rejected || 0, 'not your voice'], [s.slow_recordings || 0, 'waited out (slow)'],
+  ];
+  $('stats').innerHTML = cells.map(([b, t]) => `<div class="stat"><b>${esc(b)}</b><span>${esc(t)}</span></div>`).join('');
+}
+
+function renderFilters() {
+  $('filters').innerHTML = Object.entries(FILTER_NAMES).map(([k, n]) =>
+    `<button data-f="${k}" class="${k === filter ? 'on' : ''}">${n}</button>`).join('');
+}
+
+function renderRequests() {
+  if (!data) return;
+  const q = $('search').value.trim().toLowerCase();
+  const rows = data.requests.filter(FILTERS[filter]).filter(r => !q || JSON.stringify(r).toLowerCase().includes(q)).reverse();
+  if (!rows.length) { $('list').innerHTML = '<div class="empty">Nothing here yet.</div>'; return; }
+  $('list').innerHTML = rows.map(r => {
+    const chips = [];
+    if (r.response_s != null) chips.push([`answered in ${r.response_s.toFixed(1)} s${r.kind === 'claude' ? ' · Claude' : ''}`, r.response_s >= 4]);
+    if (r.recorded != null) chips.push([`recorded ${r.recorded.toFixed(1)} s · ${r.ended_by}`, r.ended_by === 'nothing said']);
+    if (r.voice != null) chips.push([`voice ${r.voice.toFixed(2)}`, r.voice < 0.5]);
+    if (r.spotter != null) chips.push([`name ${r.spotter.toFixed(2)}`, false]);
+    if (r.follow_up) chips.push(['follow-up', false]);
+    for (const t of r.tools) chips.push([`${t.name} ${t.input}`, false]);
+    const isNew = !first && !seen.has(key(r));
+    return `<article class="req ${r.status}${isNew ? ' new' : ''}">
+      <div class="row"><span class="time">${esc(r.day.slice(5))} ${esc(r.time)}</span><span class="pill">${LABEL[r.status]}</span></div>
+      <div class="said">${r.said ? '“' + esc(r.said) + '”' : '<span style="color:var(--muted)">(nothing heard)</span>'}</div>
+      ${r.reply ? `<div class="reply">${esc(r.reply)}</div>` : ''}
+      ${r.why ? `<div class="why">${esc(r.why)}</div>` : ''}
+      <div class="chips">${chips.map(([t, w]) => `<span class="chip${w ? ' warn' : ''}">${esc(t)}</span>`).join('')}</div>
+      ${r.clip_ok ? `<audio controls preload="none" src="/clip/${esc(r.clip)}"></audio>` : ''}
+    </article>`;
+  }).join('');
+  data.requests.forEach(r => seen.add(key(r)));
+  first = false;
+}
+
+function renderEvents() {
+  const q = $('search').value.trim().toLowerCase();
+  const ev = (data?.events || []).filter(e => !q || e.text.toLowerCase().includes(q)).reverse();
+  $('events').innerHTML = ev.length ? `<div class="req" style="--c:var(--line);padding:0">${ev.map(e =>
+    `<div class="event"><span class="time">${esc(e.day.slice(5))} ${esc(e.time)}</span>${e.kind === 'start' ? '▶ ' : '⚠ '}${esc(e.text)}</div>`).join('')}</div>`
+    : '<div class="empty">No problems logged.</div>';
+}
+
+async function refresh() {
+  if (paused) return;
+  try {
+    if (tab === 'log') {
+      const q = encodeURIComponent($('search').value.trim());
+      const lines = await (await fetch(`/api/log?lines=400&q=${q}`)).json();
+      const pre = $('raw'), atBottom = pre.scrollHeight - window.scrollY - innerHeight < 200;
+      pre.textContent = lines.join('\n') || '(empty)';
+      if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+    } else {
+      data = await (await fetch('/api/requests?limit=300')).json();
+      renderStats(data.stats);
+      tab === 'requests' ? renderRequests() : renderEvents();
+    }
+    const last = data?.last_line ? new Date(data.last_line.replace(' ', 'T')) : null;
+    const mins = last ? Math.round((Date.now() - last) / 60000) : null;
+    $('liveText').textContent = mins == null ? 'live' : mins < 1 ? 'live · active just now' : `live · last activity ${mins} min ago`;
+    $('dot').classList.remove('paused');
+  } catch {
+    $('liveText').textContent = 'console server stopped';
+    $('dot').classList.add('paused');
+  }
+}
+
+document.querySelector('nav').addEventListener('click', e => {
+  const t = e.target.closest('.tab'); if (!t) return;
+  tab = t.dataset.tab;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b === t));
+  for (const id of ['requests', 'problems', 'log']) $(id).hidden = id !== tab;
+  refresh();
+});
+$('filters').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  filter = b.dataset.f; renderFilters(); renderRequests();
+});
+$('search').addEventListener('input', () => tab === 'log' ? refresh() : (tab === 'requests' ? renderRequests() : renderEvents()));
+$('pause').addEventListener('click', () => {
+  paused = !paused; $('pause').textContent = paused ? 'Resume' : 'Pause';
+  $('dot').classList.toggle('paused', paused); $('liveText').textContent = paused ? 'paused' : 'live';
+  if (!paused) refresh();
+});
+renderFilters();
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
