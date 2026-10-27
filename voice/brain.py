@@ -77,7 +77,7 @@ TOOLS = [
         'name': 'scene',
         'description': ('Run one of Mark\'s scenes. "forest": a random cozy campfire-in-the-forest video on YouTube at volume 15. '
                         '"morning": wakes all the screens and plays jazzy boom-bap hip hop on YouTube. "night": the TV, laptop '
-                        'and monitor screens all off. "mirror": the laptop\'s screen on the TV through Moonlight.'),
+                        'and monitor screens all off; also when Mark says he is leaving or heading out (work, gym, a trip). "mirror": the laptop\'s screen on the TV through Moonlight.'),
         'input_schema': {
             'type': 'object',
             'properties': {'name': {'type': 'string', 'enum': SCENE_NAMES}},

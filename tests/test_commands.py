@@ -30,6 +30,12 @@ def test_simple_tv_commands(said, expected):
     ('mirror my laptop', 'mirror_laptop'),
     ('Zephyr, mirror my laptop to the TV', 'mirror_laptop'),
     ('put my laptop on the tv', 'mirror_laptop'),
+    ("Zephyr, I'm heading out", 'heading_out'),
+    ("Zephyr I'm going", 'heading_out'),
+    ("I'm going to work", 'heading_out'),
+    ('heading to the gym now', 'heading_out'),
+    ("okay I'm off", 'heading_out'),
+    ('leaving now', 'heading_out'),
 ])
 def test_scenes(said, expected):
     action = A.parse(said)
@@ -323,3 +329,8 @@ def test_the_name_alone_cut_short_means_listen_for_the_command(heard):
 def test_is_that_in_a_real_question_is_left_alone():
     assert A.without_name('is that the new Batman movie') == 'is that the new Batman movie'
 
+
+@pytest.mark.parametrize('said', ["I'm going to watch a movie", "I'm heading to the kitchen to cook", 'going to bed soon maybe'])
+def test_going_somewhere_else_is_not_leaving(said):
+    action = A.parse(said)
+    assert action is None or action.__name__ != 'heading_out'

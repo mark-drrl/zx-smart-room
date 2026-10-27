@@ -839,6 +839,11 @@ def good_night():
     return reply
 
 
+def heading_out():
+    """"I'm heading out", "I'm going to work"...: the same as good night, everything dark."""
+    return good_night()
+
+
 def mirror_laptop():
     """The laptop on the TV: Moonlight, streaming this laptop's Desktop from Sunshine. The TV ignores
     launch data sent from outside (deep links, tried 27 Oct), so this presses the buttons instead: on
@@ -876,12 +881,16 @@ SCENES = [
     (re.compile(r'\b(forest|campfire|camp fire)\s+mode\b'), forest_mode),
     (re.compile(r'\bgood\s*morning\b'), good_morning),
     (re.compile(r'\bgood\s*night\b'), good_night),
+    # the whole phrase, so "I'm going to watch a movie" isn't leaving
+    (re.compile(r"^(ok(ay)? |alright |bye )?(i'?m |i am |we'?re )?(heading|going|leaving|off|out)( out| off)?"
+                r"( to (work|the office|the gym|gym|school|uni|class|the shops|the store))?( now)?$"), heading_out),
     (re.compile(r'\b(mirror|cast|share|stream)\s+(my\s+|the\s+)?(laptop|computer|pc|desktop|screen)\b|'
                 r'\b(put|show|open)\s+(my\s+|the\s+)?(laptop|computer|pc|desktop)\b'), mirror_laptop),
 ]
 SCENE_BY_NAME = {'forest': forest_mode, 'morning': good_morning, 'night': good_night, 'mirror': mirror_laptop}
 SCENE_ACKS = {forest_mode: 'Forest mode. Lighting the fire.', good_morning: 'Good morning!',
-              good_night: 'Good night.', mirror_laptop: 'Putting your laptop on the TV.'}
+              good_night: 'Good night.', heading_out: "See you later. I'll switch everything off.",
+              mirror_laptop: 'Putting your laptop on the TV.'}
 
 
 SPOTIFY_APP = '3201606009684'
