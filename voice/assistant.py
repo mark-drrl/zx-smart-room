@@ -1647,7 +1647,10 @@ def main():
             # what was just said (plus ~1.5 s before, where the name usually is), for voice ID
             last['audio'] = np.concatenate(command[max(0, len(preroll) - 20):])
             last['rejected'], last['score'] = False, None
-            if voice_id and voice_id.enrolled and speech and not social['on']:
+            # always, even when the speech detector heard nothing new: that's exactly when you speak quietly
+            # and the transcript misspells the name, so your voice is what proves it was you (27 Oct: 18 such
+            # requests ignored because this was skipped)
+            if voice_id and voice_id.enrolled and not social['on']:
                 ok, sc = voice_id.is_you(last['audio'])
                 bar = max(voice_id.threshold, STRICT_VOICE_MATCH) if strict else voice_id.threshold
                 if sc is not None and sc < bar:
