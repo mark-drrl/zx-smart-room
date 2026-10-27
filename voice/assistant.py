@@ -86,6 +86,7 @@ DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
 SPOT_CONFIDENCE = 0.6
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
+NAME_PAUSE_S = 3.5                 # after the name alone: 2.0 cut off sleepy, quiet commands (27 Oct)
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
 SPEAKERPHONE_GAIN = 2.5           # quiet night-time speech from bed, a few metres from the AirHug (27 Oct)
@@ -151,7 +152,8 @@ NAME_LOOSE = re.compile(r"\b(hey|hi|okay|ok)?\s*(" + '|'.join(map(re.escape, NAM
 # Mishearings that are everyday words ("Let her go home", "With effort, go home", "Is that fair? Good
 # night", 27 Oct): they only count as the name at the very start, where the local spotter heard it.
 NAME_AT_START = re.compile(r"^\W*(hey\s+|hi\s+|okay\s+|ok\s+)?(" + '|'.join({
-    'zephyr': [r'is\s+that\s+(fair|for)', r'with\s+effort', r'let\s+her', r'just\s+for'],
+    'zephyr': [r'is\s+that\s+(fair|for)', r'with\s+effort', r'let\s+her', r'just\s+for',
+               r'(is\s+that|zip)(?=[\s,.!?]*$)'],      # the name alone, cut short: "Is that", "Zip."
 }.get(NAME.lower(), [r'(?!x)x'])) + r")\b[\s,.!?]*", re.I)
 USE_HEY_JARVIS = NAME.lower() == 'jarvis'     # the openWakeWord model only knows "Hey Jarvis"
 
@@ -1088,6 +1090,26 @@ def speakable(text):
     return '' if SILENT_NOTE.search(text) else text
 
 
+_ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+         'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+_TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
+
+
+def number_words(n):
+    """0-999 in words: 15 -> "fifteen", 42 -> "forty-two", 105 -> "one hundred and five"."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        return _TENS[n // 10] + ('-' + _ONES[n % 10] if n % 10 else '')
+    return _ONES[n // 100] + ' hundred' + (' and ' + number_words(n % 100) if n % 100 else '')
+
+
+def spoken_numbers(sentence):
+    """Whole numbers up to 999 as words before speaking: the voice said "Volume's at 15" as "volume at
+    fen" (27 Oct). Times, decimals and longer numbers are left as they are."""
+    return re.sub(r'(?<![\d:.,])\b(\d{1,3})\b(?![\d:]|[.,]\d)', lambda m: number_words(int(m.group(1))), sentence)
+
+
 class ElevenLabs:
     """ElevenLabs Flash v2.5: human-sounding speech, ~0.4 s to first audio from here (measured).
     Each sentence is sent with the one before it, so the intonation flows across sentences.
@@ -1152,6 +1174,7 @@ class Voice:
             self.wake = (np.frombuffer(w.readframes(w.getnframes()), np.int16), w.getframerate())
 
     def _make(self, sentence):
+        sentence = spoken_numbers(sentence)
         # short replies repeat a lot ("Volume's at eight."): keep them, so they play instantly
         key = (sentence, RHYTHM.voice_speed())
         hit = self.cache.get(key)
@@ -1585,8 +1608,8 @@ def main():
                 how = 'live'
             log.info(f'transcript ({how}, {time.time() - ended:.2f} s after you stopped): "{text}"')
             RHYTHM.note_rate(len(text.split()), LAST_TALK_S[0])
-            if DIAGNOSTIC:
-                save_diag(np.concatenate(command), text)
+            if DIAGNOSTIC or ((not speech or len(text.split()) <= 2) and len(os.listdir(DIAG_DIR) if os.path.isdir(DIAG_DIR) else []) < MISSED_CLIPS_KEPT):
+                save_diag(np.concatenate(command), text)      # misses kept to tune quiet night-time listening
             return text, speech
 
         last = {'audio': None, 'rejected': False}
@@ -1634,7 +1657,7 @@ def main():
             brain.warm()                  # connect to Claude while you're still talking
         try:
             if by_name:
-                text, heard_speech = listen(list(history), 2.0, duck=sure and not paused)   # people pause after the name
+                text, heard_speech = listen(list(history), NAME_PAUSE_S, duck=sure and not paused)   # people pause after the name
             else:
                 text, heard_speech = listen(list(history)[-PREROLL_FRAMES:], NO_SPEECH_GIVEUP_S, duck=sure and not paused)
             if last['rejected']:
@@ -1729,9 +1752,14 @@ class NameSpotter:
         return self.conf >= SPOT_CONFIDENCE
 
 
+DIAG_DIR = os.path.join(HERE, 'diag')       # stays on this laptop (gitignored)
+MISSED_CLIPS_KEPT = 50
+
+
 def save_diag(audio, text):
-    """Diagnostic mode only: keep the recording and its transcript so a miss can be inspected."""
-    d = os.path.join(HERE, 'diag')
+    """Keep a recording and its transcript so a miss can be inspected: everything in diagnostic mode,
+    otherwise only misses (nothing heard, or just a word or two), up to MISSED_CLIPS_KEPT files."""
+    d = DIAG_DIR
     os.makedirs(d, exist_ok=True)
     name = time.strftime('%H%M%S')
     with wave.open(os.path.join(d, name + '.wav'), 'wb') as w:

@@ -300,3 +300,26 @@ def test_speakerphone_boost_lifts_quiet_speech_and_never_clips():
     assert abs(int(A.soft_gain(quiet, 2.5)[0]) - 1000) < 20          # ~2.5x while quiet
     boosted = A.soft_gain(loud, 2.5)
     assert boosted.max() <= 32767 and boosted.min() >= -32767       # rounds off, no wrap-around
+
+
+@pytest.mark.parametrize('written, said', [
+    ("Volume's at 15.", "Volume's at fifteen."),
+    ('Volume 42 now', 'Volume forty-two now'),
+    ('It has 105 videos', 'It has one hundred and five videos'),
+    ("It's 6:08 in the morning.", "It's 6:08 in the morning."),
+    ('About 2.5 seconds', 'About 2.5 seconds'),
+    ('Born in 1999', 'Born in 1999'),
+])
+def test_numbers_are_spoken_as_words(written, said):
+    assert A.spoken_numbers(written) == said
+
+
+@pytest.mark.parametrize('heard', ['Is that', 'Is that fair?', 'Zip.'])
+def test_the_name_alone_cut_short_means_listen_for_the_command(heard):
+    assert A.NAME_AT_START.search(heard)
+    assert A.without_name(heard) == ''
+
+
+def test_is_that_in_a_real_question_is_left_alone():
+    assert A.without_name('is that the new Batman movie') == 'is that the new Batman movie'
+
