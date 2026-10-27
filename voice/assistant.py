@@ -1131,7 +1131,7 @@ def handle(text):
 SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this)( one)? (alone|there)|"
                          r"(that'?s|this is|just) a fragment|nothing for me|not (meant )?for me|no clear request|"
                          r"i'?ll (leave|skip) (it|that)|no (clear )?name|name in front|"
-                         r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it", re.I)
+                         r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it|\btranscri|mis ?hear|slipped into|i'?m guessing|mark'?s asking", re.I)
 
 
 def speakable(text):

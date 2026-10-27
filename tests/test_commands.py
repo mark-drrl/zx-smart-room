@@ -355,7 +355,9 @@ def test_unclear_volume_goes_to_claude(said):
 
 
 @pytest.mark.parametrize('narration', ["Mark's request has no clear name in front of it, but it's a direct ask.",
-                                       "I'll act on it."])
+                                       "I'll act on it.",
+                                       "Mishearing aside, Japanese Denim by Daniel Caesar is the one.", "Japanese Denim by Daniel Caesar, I'm guessing.",
+                                       "The transcript has Robert and Danny as names, which doesn't clearly match a command."])
 def test_name_narration_is_never_spoken(narration):
     assert A.speakable(narration) == ''
 
