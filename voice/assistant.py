@@ -85,6 +85,7 @@ NO_SPEECH_GIVEUP_S = 3.0
 DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15 s
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
 SPOT_CONFIDENCE = 0.6
+EARLY_CONFIDENCE = 0.75             # the name in Vosk's live partial result (no score of its own)
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
 ALREADY_SAID_S = 0.6              # no new speech after the name, but the transcript has a full command
@@ -1661,7 +1662,7 @@ def main():
     restore_screen_timeout()
     threading.Thread(target=stay_awake, daemon=True, name='stay-awake').start()
     model = Model(wakeword_models=['hey_jarvis'], inference_framework='onnx') if USE_HEY_JARVIS else None
-    spotter = NameSpotter()
+    spotter = NameSpotter(early=True)      # the barge-in spotter below stays on final results (it needs to be sure)
     voice = Voice()
     if ENV.get('DEEPGRAM_API_KEY'):
         live = DeepgramTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
@@ -1979,11 +1980,15 @@ def main():
 class NameSpotter:
     """Spots the assistant's name (WAKE_NAME) locally with Vosk, using a one-word vocabulary.
     For "Jarvis", the "hey_jarvis" model scored the name alone only 0.03-0.43 in this voice;
-    Vosk catches it reliably. It reports the word once the speaker pauses."""
+    Vosk catches it reliably. Its final result only comes once the speaker pauses, so "Zephyr can you
+    play Rex Orange County" in one breath woke her after the whole sentence, and the start was lost
+    (27 Oct). early=True also reacts to the live partial result, mid-sentence; the transcript and voice
+    checks after it still filter out the TV."""
 
-    def __init__(self, model=None):
+    def __init__(self, model=None, early=False):
         SetLogLevel(-1)
         self.model = model or VoskModel(os.path.join(HERE, 'models', 'vosk-model-small-en-us-0.15'))
+        self.early = early
         self.reset()
 
     def reset(self):
@@ -1993,6 +1998,9 @@ class NameSpotter:
 
     def heard(self, frame):
         if not self.rec.AcceptWaveform(frame.tobytes()):
+            if self.early and NAME.lower() in json.loads(self.rec.PartialResult()).get('partial', '').split():
+                self.conf = EARLY_CONFIDENCE       # partials carry no confidence
+                return True
             return False
         words = json.loads(self.rec.Result()).get('result', [])
         self.conf = max((w.get('conf', 0) for w in words if w['word'] == NAME.lower()), default=0.0)
