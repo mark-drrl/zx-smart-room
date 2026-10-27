@@ -86,6 +86,7 @@ DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
 SPOT_CONFIDENCE = 0.6
 EARLY_CONFIDENCE = 0.75             # the name in Vosk's live partial result (no score of its own)
+EARLY_STREAK = 5                    # frames (0.4 s) the name must hold in the partial result
 CONFIRM_CONFIDENCE = 0.75           # scored second look after an early trigger: real calls 1.00, junk 0.00-0.69 (27 Oct)
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
@@ -1146,7 +1147,8 @@ def handle(text):
 SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this)( one)? (alone|there)|"
                          r"(that'?s|this is|just) a fragment|nothing for me|not (meant )?for me|no clear request|"
                          r"i'?ll (leave|skip) (it|that)|no (clear )?name|name in front|"
-                         r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it|\btranscri|mis ?hear|slipped into|i'?m guessing|mark'?s asking", re.I)
+                         r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it|\btranscri|mis ?hear|slipped into|"
+                         r"mark'?s (sentence|message|words)|doesn'?t ask for anything|i'?m guessing|mark'?s asking", re.I)
 
 
 LAUGH_OPENER = re.compile(r'^\s*(ha(\s?ha)*|hah|heh)[,!.]+\s*', re.I)
@@ -1527,6 +1529,9 @@ class DeepgramSession:
     def _text(self):
         return ' '.join(self.finals + ([self.interim] if self.interim else [])).strip()
 
+    def peek(self):
+        return self._text()
+
     def send(self, frame):
         if not self.ok:
             return
@@ -1604,6 +1609,9 @@ class LiveSession:
     def dangling(self):
         """The words so far stop mid-thought: "...volume to", "...play some"."""
         return bool(DANGLING.search(' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip().lower()))
+
+    def peek(self):
+        return ' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip()
 
     def settled(self):
         """You've really stopped: the transcriber closed the last utterance, or the words haven't changed
@@ -1827,20 +1835,38 @@ def main():
         #      ("Hey Jarvis" model, low score): record, then check the transcript.
         #      Everything is streamed to Corelynx while it's recorded, so the words are ready
         #      the moment you stop talking.
-        def listen(preroll, giveup, strict=False, duck=True):
+        chimed = {'done': False}
+
+        def chime_once_named(session, stop):
+            """The wake sound, the moment the live text shows the name (~0.3 s after you say it). Early
+            triggers have no "sure" score to chime on, so the sound had gone quiet (27 Oct)."""
+            end = time.time() + 3.0
+            while not stop.is_set() and time.time() < end:
+                heard = session.peek()
+                if NAME_LOOSE.search(heard) or NAME_AT_START.search(heard):
+                    voice.wake_sound()
+                    chimed['done'] = True
+                    return
+                time.sleep(0.05)
+
+        def listen(preroll, giveup, strict=False, duck=True, chime=False):
             """Record until a pause; return (text, heard_speech). Live text, else a one-shot upload.
             The TV is muted while you talk (duck) and unmuted as soon as you've finished."""
             if duck:
                 DUCK.duck()               # ~0.05 s; audio keeps queuing meanwhile, nothing is lost
             session = live.start()
+            stop_chime = threading.Event()
             if session:
                 for f in preroll:
                     session.send(f)
+                if chime:
+                    threading.Thread(target=chime_once_named, args=(session, stop_chime), daemon=True).start()
             command, speech = record_command(frames, preroll, noise, giveup=giveup,
                                              on_frame=session.send if session else None,
                                              finished=session.sounds_finished if session else None,
                                              dangling=session.dangling if session else None,
                                              settled=session.settled if session else None)
+            stop_chime.set()
             mic['to'] = 'barge'           # don't listen to ourselves while we work and talk
             threading.Thread(target=DUCK.restore, daemon=True).start()
             # what was just said (plus ~1.5 s before, where the name usually is), for voice ID
@@ -1922,7 +1948,9 @@ def main():
             brain.warm()                  # connect to Claude while you're still talking
         try:
             if by_name:
-                text, heard_speech = listen(list(history), NAME_PAUSE_S, duck=sure and not paused)   # people pause after the name
+                text, heard_speech = listen(list(history), NAME_PAUSE_S, duck=sure and not paused,   # people pause after the name
+                                            chime=not sounded and not paused)
+                sounded = sounded or chimed['done']
             else:
                 text, heard_speech = listen(list(history)[-PREROLL_FRAMES:], NO_SPEECH_GIVEUP_S, duck=sure and not paused)
             if last['rejected']:
@@ -2020,7 +2048,7 @@ class NameSpotter:
         self.reset()
 
     def reset(self):
-        self.conf, self.was_early = 0.0, False
+        self.conf, self.was_early, self.streak = 0.0, False, 0
         self.rec = KaldiRecognizer(self.model, RATE, json.dumps([NAME.lower(), '[unk]']))
         self.rec.SetWords(True)
 
@@ -2038,10 +2066,14 @@ class NameSpotter:
 
     def heard(self, frame):
         if not self.rec.AcceptWaveform(frame.tobytes()):
-            if self.early and NAME.lower() in json.loads(self.rec.PartialResult()).get('partial', '').split():
-                self.conf, self.was_early = EARLY_CONFIDENCE, True       # partials carry no confidence
-                return True
+            if self.early:
+                named = NAME.lower() in json.loads(self.rec.PartialResult()).get('partial', '').split()
+                self.streak = self.streak + 1 if named else 0
+                if self.streak >= EARLY_STREAK:       # held, not a flicker: on kept clips this kept all 16 real
+                    self.conf, self.was_early = EARLY_CONFIDENCE, True   # calls and cut false triggers 5 -> 1, 0.3 s later
+                    return True
             return False
+        self.streak = 0
         words = json.loads(self.rec.Result()).get('result', [])
         self.conf = max((w.get('conf', 0) for w in words if w['word'] == NAME.lower()), default=0.0)
         return self.conf >= SPOT_CONFIDENCE
