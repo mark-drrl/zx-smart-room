@@ -1,4 +1,6 @@
 """How Zephyr understands what you say: commands, stop words, modes, and what she speaks."""
+import re
+
 import numpy as np
 import pytest
 
@@ -412,3 +414,22 @@ def test_deepgram_session_builds_the_text_and_knows_when_you_stopped():
 
 def test_effort_at_the_start_is_the_name():
     assert A.without_name("Effort. I'm heading up.") == "I'm heading up"
+
+
+@pytest.mark.parametrize('said', ['Zephyr, what time is it?', 'Well, Zephyr, what is the time today?', "what's the time",
+                                  'Zephyr what time is it now'])
+def test_time_is_told_from_the_clock(said):
+    action = A.parse(said)
+    assert action is A.tell_time
+    assert re.match(r"It's \d{1,2}:\d\d [AP]M\.$", A.quick_ack(action, said))
+
+
+@pytest.mark.parametrize('reply, spoken', [
+    ("Ha, it's ten to midnight.", "It's ten to midnight."),
+    ('Haha, okay, fair.', 'Okay, fair.'),
+    ('Hard to say.', 'Hard to say.'),
+    ('Happy to help.', 'Happy to help.'),
+])
+def test_no_fake_laugh_at_the_start(reply, spoken):
+    assert A.speakable(reply) == spoken
+

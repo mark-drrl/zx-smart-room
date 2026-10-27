@@ -499,6 +499,8 @@ def parse(text):
     volume = volume_command(t)
     if volume:
         return volume
+    if TIME_ASKED.match(t):
+        return tell_time
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
@@ -550,6 +552,16 @@ def spoken_number(words):
     return sum(_NUMBER_WORDS[w] for w in parts)
 
 
+TIME_ASKED = re.compile(r"^(well )?((what'?s|what is|whats|tell me) )?(the )?time( is it| now| today| please| right now)?$|"
+                        r"^(well )?what time is it( now| please| right now| today)?$")
+
+
+def tell_time():
+    """The laptop clock, said straight away: Claude repeated its own earlier answer ("still 11:50") six
+    minutes later instead of reading the time it was given (27 Oct)."""
+    return f"It's {time.strftime('%I:%M %p').lstrip('0')}."
+
+
 def volume_command(t):
     """"volume ten", "volume to twenty five", "set the volume at 15": set it here, instantly, instead of
     a ~3 s round trip to Claude. The "to"-as-digit mishearing ("volume 225") is left to Claude."""
@@ -566,6 +578,8 @@ def quick_ack(action, text):
     """What she says the moment she understands a TV command, before it's done."""
     if action in SCENE_ACKS:
         return SCENE_ACKS[action]
+    if action is tell_time:
+        return tell_time()
     if hasattr(action, 'volume'):
         return f"Volume's at {min(action.volume, MAX_VOLUME)}."
     if action is turn_on:
@@ -1135,10 +1149,16 @@ SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this
                          r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it|\btranscri|mis ?hear|slipped into|i'?m guessing|mark'?s asking", re.I)
 
 
+LAUGH_OPENER = re.compile(r'^\s*(ha(\s?ha)*|hah|heh)[,!.]+\s*', re.I)
+
+
 def speakable(text):
     """Never read out stage directions: Claude sometimes writes "[no response]" instead of nothing,
     or announces that it will stay quiet ("That's a fragment, so I'll stay quiet") - not said either."""
     text = re.sub(r'\[[^\]]*\]|\([^)]*no response[^)]*\)', '', text, flags=re.I).strip()
+    # "Ha," spoken by the voice is a drawn-out "haa" that sounds fake (27 Oct): never open with it
+    text = LAUGH_OPENER.sub('', text)
+    text = text[:1].upper() + text[1:]
     return '' if SILENT_NOTE.search(text) else text
 
 
