@@ -154,7 +154,7 @@ NAME_LOOSE = re.compile(r"\b(hey|hi|okay|ok)?\s*(" + '|'.join(map(re.escape, NAM
 # Mishearings that are everyday words ("Let her go home", "With effort, go home", "Is that fair? Good
 # night", 27 Oct): they only count as the name at the very start, where the local spotter heard it.
 NAME_AT_START = re.compile(r"^\W*(hey\s+|hi\s+|okay\s+|ok\s+)?(" + '|'.join({
-    'zephyr': [r'is\s+that\s+(fair|for)', r'with\s+effort', r'let\s+her', r'just\s+for',
+    'zephyr': [r'is\s+that\s+(fair|for)', r'(with\s+)?effort', r'let\s+her', r'just\s+for',
                r'(is\s+that|zip)(?=[\s,.!?]*$)'],      # the name alone, cut short: "Is that", "Zip."
 }.get(NAME.lower(), [r'(?!x)x'])) + r")\b[\s,.!?]*", re.I)
 USE_HEY_JARVIS = NAME.lower() == 'jarvis'     # the openWakeWord model only knows "Hey Jarvis"
@@ -1331,12 +1331,13 @@ class LiveTranscriber:
     URL = 'wss://sttapi.corelynx.io/v1/stream'
     SPARE_MAX_AGE_S = 90             # Corelynx drops idle connections (SSL EOF seen): keep the spare fresh
 
-    def __init__(self, key):
+    def __init__(self, key, keep_spare=True):
         self.key = key
         self.lock = threading.Lock()
         self.spare = None                      # (websocket, opened_at)
         self.need = threading.Event()
-        threading.Thread(target=self._keep_spare_fresh, daemon=True).start()
+        if keep_spare:                         # as Deepgram's backup it just connects when needed
+            threading.Thread(target=self._keep_spare_fresh, daemon=True).start()
 
     def _open(self):
         ws = websocket.create_connection(self.URL, timeout=8, header=[
@@ -1390,6 +1391,154 @@ class LiveTranscriber:
         return LiveSession(ws)
 
 
+DANGLING = re.compile(r"\b(to|at|the|a|an|and|on|for|of|uh|um|like|is|my|some|with|in|play|set|put|turn|"
+                      r"that|which|who|so|but|because|or|if|when|about|from|into|than|just|maybe)[,.]?$")
+DEEPGRAM_KEYTERMS = ['Zephyr', 'TizenTube', 'Moonlight', 'boom bap', 'Spotify', 'YouTube', 'Art Mode', 'forest mode',
+                     'lofi', 'Frame TV']
+
+
+def deepgram_query(streaming):
+    q = [('model', 'nova-3'), ('language', 'en'), ('smart_format', 'true')]
+    if streaming:
+        q += [('encoding', 'linear16'), ('sample_rate', str(RATE)), ('channels', '1'), ('interim_results', 'true'),
+              ('endpointing', '300')]
+    import urllib.parse
+    return urllib.parse.urlencode(q + [('keyterm', k) for k in DEEPGRAM_KEYTERMS])
+
+
+class DeepgramTranscriber:
+    """Deepgram Nova-3 live streaming, with keyterm prompting for the words Zephyr hears. Chosen on
+    27 Oct by replaying her kept misses through both: about twice as fast as Corelynx, and live it got
+    "Zephyr volume at 10" where Corelynx wrote "Is that for volume attend?". Billing is by audio sent, so
+    a spare connection (opening one takes ~1 s) is kept ready with KeepAlive messages, which carry no
+    audio and cost nothing. Corelynx takes over whenever Deepgram can't be reached."""
+    URL = 'wss://api.deepgram.com/v1/listen'
+    KEEPALIVE_S = 5                     # Deepgram closes a connection after ~10 s without data
+    SPARE_MAX_AGE_S = 300
+
+    def __init__(self, key, fallback=None):
+        self.key, self.fallback = key, fallback
+        self.lock = threading.Lock()
+        self.spare = None                      # (websocket, opened_at)
+        self.need = threading.Event()
+        threading.Thread(target=self._keep_spare_ready, daemon=True).start()
+
+    def _open(self):
+        return websocket.create_connection(f'{self.URL}?{deepgram_query(True)}', timeout=8,
+                                           header=['Authorization: Token ' + self.key])
+
+    @staticmethod
+    def _close(ws):
+        try:
+            ws.send(json.dumps({'type': 'CloseStream'}))
+            ws.close()
+        except Exception:
+            pass
+
+    def _keep_spare_ready(self):
+        while True:
+            with self.lock:
+                old = self.spare
+                stale = old is None or time.time() - old[1] > self.SPARE_MAX_AGE_S
+                if not stale:
+                    try:
+                        old[0].send(json.dumps({'type': 'KeepAlive'}))
+                    except Exception:
+                        stale, self.spare = True, None
+            if stale:
+                try:
+                    ws = self._open()
+                    with self.lock:
+                        old, self.spare = self.spare, (ws, time.time())
+                    if old:
+                        self._close(old[0])
+                except Exception as e:
+                    log.info(f'Deepgram connect failed: {e}')
+            self.need.wait(self.KEEPALIVE_S)
+            self.need.clear()
+
+    def start(self):
+        with self.lock:
+            spare, self.spare = self.spare, None
+        self.need.set()
+        try:
+            ws = spare[0] if spare and spare[0].connected else self._open()
+            return DeepgramSession(ws)
+        except Exception as e:
+            log.info(f'Deepgram unavailable ({e}); using Corelynx')
+            return self.fallback.start() if self.fallback else None
+
+
+class DeepgramSession:
+    """One request on Deepgram: the same questions as LiveSession (finished? mid-thought? the text)."""
+
+    def __init__(self, ws):
+        self.ws, self.ok = ws, True
+        self.finals, self.interim, self.last_final = [], '', False
+        self.changed = time.time()
+        self.finalized = threading.Event()
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        while True:
+            try:
+                m = json.loads(self.ws.recv())
+            except Exception:
+                self.finalized.set()
+                return
+            if m.get('type') == 'Results':
+                words = m['channel']['alternatives'][0]['transcript'].strip()
+                if m.get('is_final'):
+                    if words:
+                        self.finals.append(words)
+                    self.interim, self.last_final = '', True
+                    if m.get('from_finalize'):
+                        self.finalized.set()
+                elif words:
+                    self.interim, self.last_final = words, False
+                if words or m.get('is_final'):
+                    self.changed = time.time()
+            elif m.get('type') == 'Error' or 'err_code' in m:
+                self.ok = False
+                log.info(f'Deepgram error: {m.get("err_code") or m.get("description") or m}')
+
+    def _text(self):
+        return ' '.join(self.finals + ([self.interim] if self.interim else [])).strip()
+
+    def send(self, frame):
+        if not self.ok:
+            return
+        try:
+            self.ws.send_binary(frame.tobytes())
+        except Exception:
+            self.ok = False
+
+    def dangling(self):
+        return bool(DANGLING.search(self._text().lower()))
+
+    def settled(self):
+        """See LiveSession.settled: Deepgram closing the utterance, or 0.8 s without change, and not mid-thought."""
+        if not self._text() or self.dangling():
+            return False
+        return self.last_final or time.time() - self.changed >= 0.8
+
+    def sounds_finished(self):
+        t = self._text()
+        return bool(re.search(r'[.?!]$', t)) and len(without_name(t).split()) >= 2
+
+    def text(self, settle_s=0.12):
+        """Asks Deepgram to finish what it has (~0.5 s measured) and returns all of it."""
+        try:
+            self.ws.send(json.dumps({'type': 'Finalize'}))
+            self.finalized.wait(1.0)
+        except Exception:
+            pass
+        return self._text()
+
+    def close(self):
+        DeepgramTranscriber._close(self.ws)
+
+
 class LiveSession:
     """One utterance on a live stream. Only the speech recogniser's own text is used, never
     Corelynx's LLM stage: in testing it rewrote "Zephyr" to "Jarvis"."""
@@ -1432,9 +1581,7 @@ class LiveSession:
 
     def dangling(self):
         """The words so far stop mid-thought: "...volume to", "...play some"."""
-        t = ' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip().lower()
-        return bool(re.search(r"\b(to|at|the|a|an|and|on|for|of|uh|um|like|is|my|some|with|in|play|set|put|turn|"
-                              r"that|which|who|so|but|because|or|if|when|about|from|into|than|just|maybe)[,]?$", t))
+        return bool(DANGLING.search(' '.join(self.live.get(u) or self.deltas.get(u, '') for u in self.order).strip().lower()))
 
     def settled(self):
         """You've really stopped: the transcriber closed the last utterance, or the words haven't changed
@@ -1468,6 +1615,32 @@ class LiveSession:
 
 
 def transcribe(pcm):
+    if ENV.get('DEEPGRAM_API_KEY'):
+        try:
+            return transcribe_deepgram(pcm)
+        except Exception as e:
+            log.info(f'Deepgram upload failed ({e}); using Corelynx')
+    return transcribe_corelynx(pcm)
+
+
+def _wav(pcm):
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+def transcribe_deepgram(pcm):
+    req = urllib.request.Request(f'https://api.deepgram.com/v1/listen?{deepgram_query(False)}', data=_wav(pcm), method='POST',
+                                 headers={'Authorization': 'Token ' + ENV['DEEPGRAM_API_KEY'], 'Content-Type': 'audio/wav'})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.load(r)['results']['channels'][0]['alternatives'][0]['transcript'].strip()
+
+
+def transcribe_corelynx(pcm):
     buf = io.BytesIO()
     with wave.open(buf, 'wb') as w:
         w.setnchannels(1)
@@ -1490,7 +1663,11 @@ def main():
     model = Model(wakeword_models=['hey_jarvis'], inference_framework='onnx') if USE_HEY_JARVIS else None
     spotter = NameSpotter()
     voice = Voice()
-    live = LiveTranscriber(ENV['CORELYNX_API_KEY'])
+    if ENV.get('DEEPGRAM_API_KEY'):
+        live = DeepgramTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
+        log.info('speech-to-text: Deepgram Nova-3 (Corelynx as backup)')
+    else:
+        live = LiveTranscriber(ENV['CORELYNX_API_KEY'])
     memory = None
     try:
         sys.path.insert(0, HERE)            # memory.py and brain.py sit next to this file

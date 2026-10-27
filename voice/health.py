@@ -72,6 +72,14 @@ def main():
             raise RuntimeError(f'stream said {ready}')
         return 'live stream ready'
 
+    def deepgram():
+        if not e.get('DEEPGRAM_API_KEY'):
+            return 'not configured (Corelynx only)'
+        req = urllib.request.Request('https://api.deepgram.com/v1/projects', headers={'Authorization': 'Token ' + e['DEEPGRAM_API_KEY']})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            projects = json.load(r).get('projects', [])
+        return f'key works ({len(projects)} project{"s" if len(projects) != 1 else ""})'
+
     def claude():
         import anthropic
         from brain import MODEL
@@ -109,7 +117,7 @@ def main():
             raise RuntimeError('CLI missing')
         return 'CLI present'
 
-    for name, fn in [('TV', tv), ('Corelynx', corelynx), ('Claude', claude), ('ElevenLabs', elevenlabs),
+    for name, fn in [('TV', tv), ('Deepgram', deepgram), ('Corelynx', corelynx), ('Claude', claude), ('ElevenLabs', elevenlabs),
                      ('YouTube', youtube), ('Spotify', spotify), ('SmartThings', smartthings)]:
         ok, line = check(name, fn)
         lines.append(line)

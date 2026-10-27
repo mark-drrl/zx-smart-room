@@ -58,7 +58,7 @@ def main():
             continue                                           # silence: nothing to compare
         t0 = time.time()
         try:
-            corelynx = assistant.transcribe(pcm)
+            corelynx = assistant.transcribe_corelynx(pcm)
         except Exception as e:
             corelynx = f'(error: {e})'
         t1 = time.time()

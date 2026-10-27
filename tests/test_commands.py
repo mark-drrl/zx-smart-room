@@ -379,3 +379,35 @@ def test_a_command_said_in_one_breath_ends_quickly():
     A._vad = None
     assert len(cmd) * sec < 1.0
 
+
+def test_deepgram_session_builds_the_text_and_knows_when_you_stopped():
+    import json as _json
+
+    class FakeWS:
+        def __init__(self, messages):
+            self.messages, self.sent = list(messages), []
+        def recv(self):
+            if not self.messages:
+                raise ConnectionError('closed')
+            return _json.dumps(self.messages.pop(0))
+        def send(self, m): self.sent.append(m)
+        def send_binary(self, b): pass
+        def close(self): pass
+
+    def result(text, final=False, finalize=False):
+        return {'type': 'Results', 'is_final': final, 'from_finalize': finalize, 'channel': {'alternatives': [{'transcript': text}]}}
+    ws = FakeWS([result('Zephyr volume'), result('Zephyr volume to'), result('Zephyr, volume to 20.', final=True),
+                 result('', final=True, finalize=True)])
+    s = A.DeepgramSession(ws)
+    s.finalized.wait(2)
+    assert s.text() == 'Zephyr, volume to 20.'
+    assert s.sounds_finished() and s.settled() and not s.dangling()
+    assert any('Finalize' in m for m in ws.sent)
+    mid = A.DeepgramSession(FakeWS([result('Zephyr can you play uh')]))
+    A.time.sleep(0.1)
+    assert mid.dangling() and not mid.settled()
+
+
+def test_effort_at_the_start_is_the_name():
+    assert A.without_name("Effort. I'm heading up.") == "I'm heading up"
+
