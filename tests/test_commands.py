@@ -55,7 +55,7 @@ def test_opening_an_app():
 
 @pytest.mark.parametrize('said', [
     'go to Spotify, play a song, and lower the volume to eight',   # several steps: Claude's job
-    'volume to eight',
+    'volume up a bit',
     'play September by Earth Wind and Fire',
     'turn on the lamp',                                             # not the TV
     'what should I watch tonight',
@@ -234,7 +234,8 @@ def test_pause_after_the_name_does_not_end_the_request():
         q.put(A.np.zeros(A.FRAME, A.np.int16))
     name = [A.np.zeros(A.FRAME, A.np.int16)] * 10          # the audio holding "Zephyr"
     A._vad = FakeVAD(pattern)
-    cmd, heard = A.record_command(q, name, 300.0, giveup=2.0, finished=lambda: True)
+    said = int(1.7 / sec)                                  # the transcript only reads as complete once it's said
+    cmd, heard = A.record_command(q, name, 300.0, giveup=2.0, finished=lambda: A._vad.i >= said)
     A._vad = None
     A.RHYTHM.gaps.clear()
     A.RHYTHM.rates.clear()
@@ -334,3 +335,47 @@ def test_is_that_in_a_real_question_is_left_alone():
 def test_going_somewhere_else_is_not_leaving(said):
     action = A.parse(said)
     assert action is None or action.__name__ != 'heading_out'
+
+
+@pytest.mark.parametrize('said, level', [
+    ('Zephyr volume ten', 10), ('volume to twenty five', 25), ('Zephyr, volume at 15.', 15),
+    ('set the volume to thirty', 30), ('volume twenty-five please', 25), ('TV volume 8', 8),
+])
+def test_volume_is_set_instantly(said, level):
+    action = A.parse(said)
+    assert action is not None and action.volume == level
+    assert A.quick_ack(action, said) == f"Volume's at {level}."
+
+
+@pytest.mark.parametrize('said', ['volume attempts', 'volume up a bit', 'what is the volume', 'volume 250',
+                                  'volume twenty ten'])
+def test_unclear_volume_goes_to_claude(said):
+    action = A.parse(said)
+    assert action is None or not hasattr(action, 'volume')
+
+
+@pytest.mark.parametrize('narration', ["Mark's request has no clear name in front of it, but it's a direct ask.",
+                                       "I'll act on it."])
+def test_name_narration_is_never_spoken(narration):
+    assert A.speakable(narration) == ''
+
+
+def test_a_command_said_in_one_breath_ends_quickly():
+    """'Zephyr volume at ten' in one go: no new speech after the spotter fires, but the live transcript
+    is complete, so recording stops at ~0.6 s instead of waiting out the 3.5 s give-up."""
+    import queue
+    sec = A.FRAME / A.RATE
+
+    class FakeVAD:
+        def reset(self): pass
+        def accept_waveform(self, x): pass
+        def is_speech_detected(self): return False
+
+    q = queue.Queue()
+    for _ in range(int(4 / sec)):
+        q.put(A.np.zeros(A.FRAME, A.np.int16))
+    A._vad = FakeVAD()
+    cmd, heard = A.record_command(q, [], 300.0, giveup=3.5, finished=lambda: True)
+    A._vad = None
+    assert len(cmd) * sec < 1.0
+

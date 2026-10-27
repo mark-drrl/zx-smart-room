@@ -87,10 +87,11 @@ HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go ho
 SPOT_CONFIDENCE = 0.6
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
+ALREADY_SAID_S = 0.6              # no new speech after the name, but the transcript has a full command
 NAME_PAUSE_S = 3.5                 # after the name alone: 2.0 cut off sleepy, quiet commands (27 Oct)
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
-SPEAKERPHONE_GAIN = 2.5           # quiet night-time speech from bed, a few metres from the AirHug (27 Oct)
+SPEAKERPHONE_GAIN = 1.0           # 2.5 overdrove normal speech (RMS 8-14k, squashed: garbled transcripts, 27 Oct)
 
 
 def soft_gain(samples, gain):
@@ -493,6 +494,9 @@ def parse(text):
         for pattern, scene in SCENES:
             if pattern.search(t):
                 return scene
+    volume = volume_command(t)
+    if volume:
+        return volume
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
@@ -523,10 +527,45 @@ def parse(text):
     return None
 
 
+_NUMBER_WORDS = {w: i for i, w in enumerate(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+                                                 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+                                                 'seventeen', 'eighteen', 'nineteen'])}
+_NUMBER_WORDS.update({w: 10 * i for i, w in enumerate(['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy',
+                                                         'eighty', 'ninety']) if w})
+VOLUME_SET = re.compile(r"^(set |turn |put )?(the )?(tv )?volume( level)?( to| at| on)?\s+(?P<n>\d{1,3}|[a-z]+(?:[\s-][a-z]+)?)( please| now)?$")
+
+
+def spoken_number(words):
+    """"25", "twenty five", "twenty-five", "ten" -> int; None if it isn't a number."""
+    words = words.strip()
+    if words.isdigit():
+        return int(words)
+    parts = re.split(r'[\s-]+', words)
+    if not all(w in _NUMBER_WORDS for w in parts) or len(parts) > 2:
+        return None
+    if len(parts) == 2 and not (_NUMBER_WORDS[parts[0]] >= 20 and _NUMBER_WORDS[parts[0]] % 10 == 0 and 0 < _NUMBER_WORDS[parts[1]] < 10):
+        return None
+    return sum(_NUMBER_WORDS[w] for w in parts)
+
+
+def volume_command(t):
+    """"volume ten", "volume to twenty five", "set the volume at 15": set it here, instantly, instead of
+    a ~3 s round trip to Claude. The "to"-as-digit mishearing ("volume 225") is left to Claude."""
+    m = VOLUME_SET.match(t)
+    level = spoken_number(m.group('n')) if m else None
+    if level is None or level > 100:
+        return None
+    go = lambda: set_volume(level)
+    go.volume = level
+    return go
+
+
 def quick_ack(action, text):
     """What she says the moment she understands a TV command, before it's done."""
     if action in SCENE_ACKS:
         return SCENE_ACKS[action]
+    if hasattr(action, 'volume'):
+        return f"Volume's at {min(action.volume, MAX_VOLUME)}."
     if action is turn_on:
         return 'Turning on the TV.'
     if action is turn_off:
@@ -544,7 +583,7 @@ def quick_ack(action, text):
 
 
 def failed(reply):
-    return bool(reply) and bool(re.search(r"couldn'?t|can'?t|isn'?t|didn'?t|no app|not paired|still on|nothing found", reply, re.I))
+    return bool(reply) and bool(re.search(r"couldn'?t|can'?t|isn'?t|didn'?t|no app|not paired|still on|nothing found|is off", reply, re.I))
 
 
 def in_background_if_off(job, waking_msg):
@@ -1090,7 +1129,8 @@ def handle(text):
 
 SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this)( one)? (alone|there)|"
                          r"(that'?s|this is|just) a fragment|nothing for me|not (meant )?for me|no clear request|"
-                         r"i'?ll (leave|skip) (it|that)", re.I)
+                         r"i'?ll (leave|skip) (it|that)|no (clear )?name|name in front|"
+                         r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it", re.I)
 
 
 def speakable(text):
@@ -1510,7 +1550,7 @@ def main():
         if phone and phone.connected and not SPEAKERPHONE:
             return                        # the phone is the mic right now
         if SPEAKERPHONE:
-            route(soft_gain(data[:, 0], gain))
+            route(soft_gain(data[:, 0], gain) if gain != 1 else data[:, 0].copy())
         else:
             route(np.clip(data[:, 0].astype(np.int32) * gain, -32768, 32767).astype(np.int16))
     stream = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=FRAME, callback=on_audio)
@@ -1856,6 +1896,11 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
             if not long_talk and quiet * sec >= QUICK_END_S - 0.25 and finished and finished():
                 reason = 'sentence done'
                 break
+        elif (n - skipped) * sec >= ALREADY_SAID_S and finished and finished():
+            # "Zephyr volume at ten" in one breath: the spotter only fires once it's all said, so no new
+            # speech follows; the live transcript already has it all. Was a 3.5 s wait every time (27 Oct).
+            reason = 'already said'
+            break
         elif (n - skipped) * sec > giveup:
             reason = 'nothing said'
             break
