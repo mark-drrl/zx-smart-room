@@ -412,4 +412,3 @@ def test_deepgram_session_builds_the_text_and_knows_when_you_stopped():
 
 def test_effort_at_the_start_is_the_name():
     assert A.without_name("Effort. I'm heading up.") == "I'm heading up"
-

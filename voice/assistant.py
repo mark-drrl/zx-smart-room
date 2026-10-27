@@ -86,6 +86,7 @@ DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
 SPOT_CONFIDENCE = 0.6
 EARLY_CONFIDENCE = 0.75             # the name in Vosk's live partial result (no score of its own)
+CONFIRM_CONFIDENCE = 0.75           # scored second look after an early trigger: real calls 1.00, junk 0.00-0.69 (27 Oct)
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
 ALREADY_SAID_S = 0.6              # no new speech after the name, but the transcript has a full command
@@ -1936,6 +1937,13 @@ def main():
             # "Left for", "Therefore", 27 Oct) though the spotter heard it and the voice was clearly
             # Mark's: then trust them. TV and other people still need the name in the transcript.
             yours = by_name and (last['score'] or 0) >= YOUR_VOICE_SURE
+            if yours and spotter.was_early and last['audio'] is not None:
+                # your voice proves who spoke, not that you spoke to her: an early trigger needs the name
+                # confirmed by a scored look at the recording (27 Oct: "Paris. What's up?" got answered)
+                confirmed = spotter.confirm(last['audio'])
+                yours = confirmed >= CONFIRM_CONFIDENCE
+                if not yours:
+                    log.info(f'early trigger not confirmed (name {confirmed:.2f})')
             if not sure and not name_in_text and not yours:
                 # the name wasn't really said (TV, music, people talking): stay silent
                 log.info(f'name not in transcript (spotter {spotter.conf:.2f}); ignored')
@@ -1992,14 +2000,26 @@ class NameSpotter:
         self.reset()
 
     def reset(self):
-        self.conf = 0.0
+        self.conf, self.was_early = 0.0, False
         self.rec = KaldiRecognizer(self.model, RATE, json.dumps([NAME.lower(), '[unk]']))
         self.rec.SetWords(True)
+
+    def confirm(self, audio):
+        """A scored second look at a whole recording: how sure Vosk is the name is in it (0 if not).
+        An early (partial) trigger has no score, and partials fire on "Paris" or "What's the weather"."""
+        rec = KaldiRecognizer(self.model, RATE, json.dumps([NAME.lower(), '[unk]']))
+        rec.SetWords(True)
+        words = []
+        for i in range(0, len(audio), RATE):
+            if rec.AcceptWaveform(audio[i:i + RATE].tobytes()):
+                words += json.loads(rec.Result()).get('result', [])
+        words += json.loads(rec.FinalResult()).get('result', [])
+        return max((w.get('conf', 0) for w in words if w['word'] == NAME.lower()), default=0.0)
 
     def heard(self, frame):
         if not self.rec.AcceptWaveform(frame.tobytes()):
             if self.early and NAME.lower() in json.loads(self.rec.PartialResult()).get('partial', '').split():
-                self.conf = EARLY_CONFIDENCE       # partials carry no confidence
+                self.conf, self.was_early = EARLY_CONFIDENCE, True       # partials carry no confidence
                 return True
             return False
         words = json.loads(self.rec.Result()).get('result', [])
