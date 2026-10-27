@@ -86,6 +86,7 @@ DIAGNOSTIC = '--diag' in sys.argv          # heartbeat lines in the log every 15
 HISTORY_FRAMES = 50               # ~4 s of recent audio kept for "<name>, go home" said in one breath
 SPOT_CONFIDENCE = 0.6
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
+YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
 NAME_PAUSE_S = 3.5                 # after the name alone: 2.0 cut off sleepy, quiet commands (27 Oct)
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
@@ -1584,7 +1585,7 @@ def main():
             threading.Thread(target=DUCK.restore, daemon=True).start()
             # what was just said (plus ~1.5 s before, where the name usually is), for voice ID
             last['audio'] = np.concatenate(command[max(0, len(preroll) - 20):])
-            last['rejected'] = False
+            last['rejected'], last['score'] = False, None
             if voice_id and voice_id.enrolled and speech and not social['on']:
                 ok, sc = voice_id.is_you(last['audio'])
                 bar = max(voice_id.threshold, STRICT_VOICE_MATCH) if strict else voice_id.threshold
@@ -1594,6 +1595,7 @@ def main():
                     log.info(f'not your voice (match {sc:.2f} < {bar:.2f}{", no name said" if strict else ""}); ignored')
                     return '', False
                 if sc is not None:
+                    last['score'] = sc
                     log.info(f'voice match {sc:.2f}')
                     voice_id.learn(last['audio'], sc)     # clear matches sharpen your voiceprint
             ended = time.time()
@@ -1612,7 +1614,7 @@ def main():
                 save_diag(np.concatenate(command), text)      # misses kept to tune quiet night-time listening
             return text, speech
 
-        last = {'audio': None, 'rejected': False}
+        last = {'audio': None, 'rejected': False, 'score': None}
 
         def learn_voice():
             voice.say("Sure. I'll read six short phrases. After each one, wait for the sound, "
@@ -1688,7 +1690,11 @@ def main():
                 continue
             action = parse(text)
             name_in_text = bool(NAME_LOOSE.search(text) or NAME_AT_START.search(text))
-            if not sure and not name_in_text:
+            # From across the room the name comes out as a different word every time ("That's true",
+            # "Left for", "Therefore", 27 Oct) though the spotter heard it and the voice was clearly
+            # Mark's: then trust them. TV and other people still need the name in the transcript.
+            yours = by_name and (last['score'] or 0) >= YOUR_VOICE_SURE
+            if not sure and not name_in_text and not yours:
                 # the name wasn't really said (TV, music, people talking): stay silent
                 log.info(f'name not in transcript (spotter {spotter.conf:.2f}); ignored')
                 continue
