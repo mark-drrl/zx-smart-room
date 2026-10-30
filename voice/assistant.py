@@ -159,7 +159,7 @@ NAME_LOOSE = re.compile(r"\b(hey|hi|okay|ok)?\s*(" + '|'.join(map(re.escape, NAM
 # night", 27 Oct): they only count as the name at the very start, where the local spotter heard it.
 NAME_AT_START = re.compile(r"^\W*(hey\s+|hi\s+|okay\s+|ok\s+)?(" + '|'.join({
     'zephyr': [r'is\s+that\s+(fair|for)', r'(with\s+)?effort', r'let\s+her', r'just\s+for',
-               r'(is\s+that|zip)(?=[\s,.!?]*$)'],      # the name alone, cut short: "Is that", "Zip."
+               r'(is\s+that|zip)(?=[\s,.!?]*$)', r'refer'],      # the name alone, cut short: "Is that", "Zip."
 }.get(NAME.lower(), [r'(?!x)x'])) + r")\b[\s,.!?]*", re.I)
 USE_HEY_JARVIS = NAME.lower() == 'jarvis'     # the openWakeWord model only knows "Hey Jarvis"
 
@@ -489,8 +489,12 @@ def go_home():
 
 def parse(text):
     """Work out the command without doing it: returns a function to call, or None."""
+    english, tagalog = hearings(text)
+    if tagalog:
+        return parse(english) or parse(tagalog)
     t = text.lower()
     t = re.sub(r"[^\w\s']", ' ', t)
+    t = re.sub(r"(?<!\w)'|'(?!\w)", ' ', t)       # stray quotes: "pakihinaan' yung volume"
     t = NAME_LOOSE.sub(' ', NAME_AT_START.sub(' ', t))
     t = re.sub(r'\s+', ' ', t).strip()
     t = re.sub(r'\bt\s+v\b', 'tv', t)     # Corelynx sometimes writes "T V"
@@ -501,8 +505,13 @@ def parse(text):
     volume = volume_command(t)
     if volume:
         return volume
-    if TIME_ASKED.match(t):
+    if TIME_ASKED.match(t) or TAGALOG_TIME.search(t):
         return tell_time
+    if TAGALOG_LOUDER.match(t) or TAGALOG_QUIETER.match(t):
+        step = 5 if TAGALOG_LOUDER.match(t) else -5
+        go = lambda: set_volume(change=step)
+        go.volume_step = step
+        return go
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
@@ -554,6 +563,9 @@ def spoken_number(words):
     return sum(_NUMBER_WORDS[w] for w in parts)
 
 
+TAGALOG_TIME = re.compile(r"\b(anong|ano ang|anung) oras( na)?\b|\boras na( ba)?\b")
+TAGALOG_LOUDER = re.compile(r"^(paki ?)?lakas(an|in)( mo)?( (ang|yung|ng) volume)?( po| naman| pa)*$")
+TAGALOG_QUIETER = re.compile(r"^(paki ?)?(hina|hinaan|hinain)( mo)?( (ang|yung|ng) volume)?( po| naman| pa)*$")
 TIME_ASKED = re.compile(r"^(well )?((what'?s|what is|whats|tell me) )?(the )?time( is it| now| today| please| right now)?$|"
                         r"^(well )?what time is it( now| please| right now| today)?$")
 
@@ -582,6 +594,8 @@ def quick_ack(action, text):
         return SCENE_ACKS[action]
     if action is tell_time:
         return tell_time()
+    if hasattr(action, 'volume_step'):
+        return 'Sige.'                    # "okay" in Tagalog: the change itself is the answer
     if hasattr(action, 'volume'):
         return f"Volume's at {min(action.volume, MAX_VOLUME)}."
     if action is turn_on:
@@ -1149,7 +1163,9 @@ SILENT_NOTE = re.compile(r"stay quiet|keep quiet|stay silent|leave (it|that|this
                          r"(that'?s|this is|just) a fragment|nothing for me|not (meant )?for me|no clear request|"
                          r"i'?ll (leave|skip) (it|that)|no (clear )?name|name in front|"
                          r"(mark'?s|this|the|that) request (has|is|sounds|doesn'?t)|i'?ll act on it|\btranscri|mis ?hear|slipped into|"
-                         r"mark'?s (sentence|message|words)|doesn'?t ask for anything|i'?m guessing|mark'?s asking", re.I)
+                         r"mark'?s (sentence|message|words)|doesn'?t ask for anything|i'?m guessing|mark'?s asking|"
+                         r"^the request is|sounds like a (song )?request|is garbled|\bmark wants\b|no number given|"
+                         r"^\"[^\"]+\" sounds like", re.I)
 
 
 LAUGH_OPENER = re.compile(r'^\s*(ha(\s?ha)*|hah|heh)[,!.]+\s*', re.I)
@@ -1422,13 +1438,32 @@ DEEPGRAM_KEYTERMS = ['Zephyr', 'TizenTube', 'Moonlight', 'boom bap', 'Spotify', 
                      'lofi', 'Frame TV']
 
 
-def deepgram_query(streaming):
-    q = [('model', 'nova-3'), ('language', 'en'), ('smart_format', 'true')]
+def deepgram_query(streaming, language='en'):
+    q = [('model', 'nova-3'), ('language', language), ('smart_format', 'true')]
     if streaming:
         q += [('encoding', 'linear16'), ('sample_rate', str(RATE)), ('channels', '1'), ('interim_results', 'true'),
               ('endpointing', '300')]
+    if language == 'en':
+        q += [('keyterm', k) for k in DEEPGRAM_KEYTERMS]   # keyterm prompting is English-only
     import urllib.parse
-    return urllib.parse.urlencode(q + [('keyterm', k) for k in DEEPGRAM_KEYTERMS])
+    return urllib.parse.urlencode(q)
+
+
+TAGALOG_MARK = ' [heard as Tagalog: "'             # the second hearing, appended to the English one
+
+
+def with_tagalog(english, tagalog):
+    """One line for Claude and the log: the English hearing, plus the Tagalog one when it differs."""
+    words = lambda x: re.sub(r"[^\w\s']", ' ', x.lower()).split()
+    if not tagalog or words(tagalog) == words(english):
+        return english
+    return f'{english}{TAGALOG_MARK}{tagalog}"]'
+
+
+def hearings(text):
+    """(english, tagalog) from with_tagalog()'s line."""
+    english, _, rest = text.partition(TAGALOG_MARK)
+    return english, rest[:-2] if rest.endswith('"]') else rest
 
 
 class DeepgramTranscriber:
@@ -1441,15 +1476,15 @@ class DeepgramTranscriber:
     KEEPALIVE_S = 5                     # Deepgram closes a connection after ~10 s without data
     SPARE_MAX_AGE_S = 300
 
-    def __init__(self, key, fallback=None):
-        self.key, self.fallback = key, fallback
+    def __init__(self, key, fallback=None, language='en'):
+        self.key, self.fallback, self.language = key, fallback, language
         self.lock = threading.Lock()
         self.spare = None                      # (websocket, opened_at)
         self.need = threading.Event()
         threading.Thread(target=self._keep_spare_ready, daemon=True).start()
 
     def _open(self):
-        return websocket.create_connection(f'{self.URL}?{deepgram_query(True)}', timeout=8,
+        return websocket.create_connection(f'{self.URL}?{deepgram_query(True, self.language)}', timeout=8,
                                            header=['Authorization: Token ' + self.key])
 
     @staticmethod
@@ -1492,6 +1527,72 @@ class DeepgramTranscriber:
         except Exception as e:
             log.info(f'Deepgram unavailable ({e}); using Corelynx')
             return self.fallback.start() if self.fallback else None
+
+
+class TaglishTranscriber:
+    """Mark speaks Taglish. Tested on his own recordings (30 Oct), Deepgram English always caught "Zephyr"
+    and English titles but turned Tagalog into nonsense ("Zephyr no Orsna"), Tagalog got the Tagalog ("oras
+    na", "pakihinaan yung volume") but not the name, and multilingual once answered in Hebrew script.
+    So both listen at once and Claude gets both hearings: 7 of 7 of his Taglish requests right, against
+    3 of 7 before the Taglish guidance. English still decides when you've finished and whether the name
+    was said. Costs twice the audio minutes (~$4-6 a month)."""
+
+    def __init__(self, key, fallback=None):
+        self.english = DeepgramTranscriber(key, fallback, 'en')
+        self.tagalog = DeepgramTranscriber(key, None, 'tl')
+
+    def start(self):
+        english = self.english.start()
+        if not isinstance(english, DeepgramSession):
+            return english                         # Deepgram is down: Corelynx alone, English only
+        try:
+            tagalog = self.tagalog.start()
+        except Exception:
+            tagalog = None
+        return TaglishSession(english, tagalog) if tagalog else english
+
+
+class TaglishSession:
+    """Both hearings of one request: timing questions go to English, the text combines them."""
+
+    def __init__(self, english, tagalog):
+        self.english, self.tagalog = english, tagalog
+
+    @property
+    def ok(self):
+        return self.english.ok
+
+    def send(self, frame):
+        self.english.send(frame)
+        self.tagalog.send(frame)
+
+    def dangling(self):
+        return self.english.dangling()
+
+    def settled(self):
+        return self.english.settled()
+
+    def sounds_finished(self):
+        return self.english.sounds_finished()
+
+    def peek(self):
+        return self.english.peek()
+
+    def text(self, settle_s=0.12):
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(2)                         # both finish together, not one after the other
+        english, tagalog = pool.submit(self.english.text), pool.submit(self.tagalog.text)
+        heard = english.result()
+        try:
+            other = tagalog.result(timeout=0.15)             # Tagalog took up to 0.9 s: never wait much longer
+        except Exception:
+            other = self.tagalog.peek()                      # than English; take what it has so far
+        pool.shutdown(wait=False)
+        return with_tagalog(heard, other)
+
+    def close(self):
+        self.english.close()
+        self.tagalog.close()
 
 
 class DeepgramSession:
@@ -1695,8 +1796,8 @@ def main():
     spotter = NameSpotter(early=True)      # the barge-in spotter below stays on final results (it needs to be sure)
     voice = Voice()
     if ENV.get('DEEPGRAM_API_KEY'):
-        live = DeepgramTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
-        log.info('speech-to-text: Deepgram Nova-3 (Corelynx as backup)')
+        live = TaglishTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
+        log.info('speech-to-text: Deepgram Nova-3, English + Tagalog (Corelynx as backup)')
     else:
         live = LiveTranscriber(ENV['CORELYNX_API_KEY'])
     memory = None
