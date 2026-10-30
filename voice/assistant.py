@@ -1932,7 +1932,8 @@ def main():
                 how = 'live'
             log.info(f'transcript ({how}, {time.time() - ended:.2f} s after you stopped): "{text}"')
             RHYTHM.note_rate(len(text.split()), LAST_TALK_S[0])
-            if DIAGNOSTIC or ((not speech or len(text.split()) <= 2) and len(os.listdir(DIAG_DIR) if os.path.isdir(DIAG_DIR) else []) < MISSED_CLIPS_KEPT):
+            keep_all = os.path.exists(os.path.join(DIAG_DIR, 'keep-all'))     # e.g. to collect Taglish for testing
+            if DIAGNOSTIC or keep_all or ((not speech or len(text.split()) <= 2) and len(os.listdir(DIAG_DIR) if os.path.isdir(DIAG_DIR) else []) < MISSED_CLIPS_KEPT):
                 save_diag(np.concatenate(command), text)      # misses kept to tune quiet night-time listening
             return text, speech
 
