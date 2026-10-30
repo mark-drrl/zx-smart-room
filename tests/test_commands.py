@@ -434,3 +434,19 @@ def test_time_is_told_from_the_clock(said):
 def test_no_fake_laugh_at_the_start(reply, spoken):
     assert A.speakable(reply) == spoken
 
+
+def test_recording_stops_instead_of_hanging_when_the_mic_dies(monkeypatch):
+    import queue
+    monkeypatch.setattr(A, 'MIC_STALL_S', 0.2)
+
+    class FakeVAD:
+        def reset(self): pass
+        def accept_waveform(self, x): pass
+        def is_speech_detected(self): return False
+    A._vad = FakeVAD()
+    try:
+        cmd, heard = A.record_command(queue.Queue(), [], 300.0, giveup=3.5)
+    finally:
+        A._vad = None
+    assert cmd == [] and not heard
+

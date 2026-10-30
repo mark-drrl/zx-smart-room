@@ -91,6 +91,7 @@ CONFIRM_CONFIDENCE = 0.75           # scored second look after an early trigger:
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
 ALREADY_SAID_S = 0.6              # no new speech after the name, but the transcript has a full command
+MIC_STALL_S = 5.0                 # no audio at all for this long: the mic stream died, reopen it
 NAME_PAUSE_S = 3.5                 # after the name alone: 2.0 cut off sleepy, quiet commands (27 Oct)
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
 MIC_GAIN = 2                      # digital boost for the quiet laptop mic
@@ -1764,7 +1765,10 @@ def main():
     SPEAKERPHONE = 'microphone array' not in sd.query_devices(sd.default.device[0])['name'].lower()
     gain = SPEAKERPHONE_GAIN if SPEAKERPHONE else MIC_GAIN    # the laptop mic is quiet after its own noise suppression
     phone = None
+    mic_alive = {'at': time.time()}
+
     def on_audio(data, n, t, s):
+        mic_alive['at'] = time.time()
         if phone and phone.connected and not SPEAKERPHONE:
             return                        # the phone is the mic right now
         if SPEAKERPHONE:
@@ -1772,6 +1776,30 @@ def main():
         else:
             route(np.clip(data[:, 0].astype(np.int32) * gain, -32768, 32767).astype(np.int16))
     stream = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=FRAME, callback=on_audio)
+
+    def reopen_mic(old):
+        """The mic stream can stop delivering audio without an error (30 Oct: silent from 12:16 until
+        found that night, after a network blip, the AirHug still listed as fine). Re-scan the devices
+        and open it again; keep trying every 10 s if it isn't back yet."""
+        log.info(f'mic sent no audio for {MIC_STALL_S:.0f} s; reopening it')
+        try:
+            old.abort()
+            old.close()
+        except Exception:
+            pass
+        while True:
+            try:
+                sd._terminate()                      # forget the old device list: it may have reconnected
+                sd._initialize()
+                sd.default.device = (pick_device(ENV.get('MIC_DEVICE'), 'input'), pick_device(ENV.get('SPEAKER_DEVICE'), 'output'))
+                new = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=FRAME, callback=on_audio)
+                new.start()
+                mic_alive['at'] = time.time()
+                log.info(f'mic reopened on "{sd.query_devices(sd.default.device[0])["name"]}"')
+                return new
+            except Exception as e:
+                log.info(f'mic reopen failed: {e}; trying again in 10 s')
+                time.sleep(10)
     # Android phone as the mic (AndroidMic app, Wi-Fi): used whenever it's connected. Its audio
     # follows the laptop mic's on/off, so Zephyr never hears itself through the phone either.
     try:
@@ -1813,7 +1841,12 @@ def main():
     noise = 300.0                     # running estimate of room noise (RMS)
     beat_at, beat_level, beat_score, beat_frames = time.time() + 15, 0.0, 0.0, 0
     while True:
-        f = frames.get()
+        try:
+            f = frames.get(timeout=2)
+        except queue.Empty:
+            if time.time() - mic_alive['at'] > MIC_STALL_S:
+                stream = reopen_mic(stream)
+            continue
         rms = float(np.sqrt(np.mean(f.astype(np.float32) ** 2)))
         noise = 0.995 * noise + 0.005 * min(rms, noise * 3)
         history.append(f)
@@ -2142,7 +2175,11 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
                            # pause after the name then looked like the end of the request (26 Oct)
     heard_speech, quiet, skipped, reason, talked = False, 0, 0, 'time limit', 0
     for n in range(1, int((MAX_COMMAND_S + 2) / sec) + 1):
-        f = frames.get()
+        try:
+            f = frames.get(timeout=MIC_STALL_S)
+        except queue.Empty:
+            reason = 'mic stopped'                       # the main loop reopens it
+            break
         command.append(f)
         if on_frame:
             on_frame(f)                                  # live-stream it while still recording
