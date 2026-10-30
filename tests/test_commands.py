@@ -451,25 +451,6 @@ def test_recording_stops_instead_of_hanging_when_the_mic_dies(monkeypatch):
     assert cmd == [] and not heard
 
 
-@pytest.mark.parametrize('said, kind', [
-    ('Zephyr, anong oras na?', 'time'), ('oras na ba', 'time'),
-    ('Zephyr pakihinaan', -5), ('hinaan mo yung volume', -5), ("Refer, pakihinaan' yung volume.", -5), ('Zephyr, pakilakasan naman', 5), ('lakasan', 5),
-])
-def test_tagalog_commands_are_instant(said, kind):
-    action = A.parse(said)
-    if kind == 'time':
-        assert action is A.tell_time
-    else:
-        assert action.volume_step == kind and A.quick_ack(action, said) == 'Sige.'
-
-
-def test_two_hearings_are_combined_and_split_again():
-    line = A.with_tagalog('Zephyr no Orsna.', 'Zipherno oras na.')
-    assert line == 'Zephyr no Orsna. [heard as Tagalog: "Zipherno oras na."]'
-    assert A.hearings(line) == ('Zephyr no Orsna.', 'Zipherno oras na.')
-    assert A.with_tagalog('Zephyr, go home.', 'zephyr go home') == 'Zephyr, go home.'     # same words: one hearing
-    assert A.parse(line) is A.tell_time                       # the Tagalog hearing has the command
-    assert A.parse(A.with_tagalog('Zephyr go home', 'Zeffer go hom')).__name__ == 'go_home'
 
 
 @pytest.mark.parametrize('narration', ['Mark wants the volume lowered.', '"Pahina an" sounds like "pahinaan," so lower it.',
@@ -477,3 +458,22 @@ def test_two_hearings_are_combined_and_split_again():
 def test_taglish_narration_is_not_spoken(narration):
     assert A.speakable(narration) == ''
 
+
+
+def test_unconfirmed_early_trigger_stops_after_two_seconds():
+    import queue
+    sec = A.FRAME / A.RATE
+
+    class FakeVAD:
+        def reset(self): pass
+        def accept_waveform(self, x): pass
+        def is_speech_detected(self): return True          # TV talking non-stop
+    q = queue.Queue()
+    for _ in range(int(25 / sec)):
+        q.put(A.np.zeros(A.FRAME, A.np.int16))
+    A._vad = FakeVAD()
+    try:
+        cmd, _ = A.record_command(q, [], 300.0, abandon=lambda command: True)
+    finally:
+        A._vad = None
+    assert len(cmd) * sec <= A.ABANDON_CHECK_S + 0.1 and A.LAST_END[0] == 'not for me'

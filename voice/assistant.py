@@ -90,7 +90,10 @@ EARLY_STREAK = 5                    # frames (0.4 s) the name must hold in the p
 CONFIRM_CONFIDENCE = 0.75           # scored second look after an early trigger: real calls 1.00, junk 0.00-0.69 (27 Oct)
 STRICT_VOICE_MATCH = 0.55           # voice ID bar when the name wasn't said (follow-ups): music scored 0.44
 YOUR_VOICE_SURE = 0.65            # voice match this high: the spotter's "Zephyr" is trusted without the transcript
+LAST_END = ['']                   # how the last recording ended (record_command)
 ALREADY_SAID_S = 0.6              # no new speech after the name, but the transcript has a full command
+LONG_MEDIA_WORDS = 30             # a transcript this long without the name at the start is media (30 Oct review)
+ABANDON_CHECK_S = 2.0             # an unconfirmed early trigger is dropped this far into the recording
 MIC_STALL_S = 5.0                 # no audio at all for this long: the mic stream died, reopen it
 NAME_PAUSE_S = 3.5                 # after the name alone: 2.0 cut off sleepy, quiet commands (27 Oct)
 SURE_CONFIDENCE = 0.95              # this sure of the name: play the sound at once (else after checking)
@@ -489,9 +492,6 @@ def go_home():
 
 def parse(text):
     """Work out the command without doing it: returns a function to call, or None."""
-    english, tagalog = hearings(text)
-    if tagalog:
-        return parse(english) or parse(tagalog)
     t = text.lower()
     t = re.sub(r"[^\w\s']", ' ', t)
     t = re.sub(r"(?<!\w)'|'(?!\w)", ' ', t)       # stray quotes: "pakihinaan' yung volume"
@@ -505,13 +505,8 @@ def parse(text):
     volume = volume_command(t)
     if volume:
         return volume
-    if TIME_ASKED.match(t) or TAGALOG_TIME.search(t):
+    if TIME_ASKED.match(t):
         return tell_time
-    if TAGALOG_LOUDER.match(t) or TAGALOG_QUIETER.match(t):
-        step = 5 if TAGALOG_LOUDER.match(t) else -5
-        go = lambda: set_volume(change=step)
-        go.volume_step = step
-        return go
     # Only short, single commands are handled here instantly; anything more ("open Spotify and
     # play a song", "volume to eight") goes to Claude, which has the full remote.
     if len(t.split()) > 6 or re.search(r'\b(and|then|after|play|song|music|volume|louder|quieter|mute|'
@@ -563,9 +558,6 @@ def spoken_number(words):
     return sum(_NUMBER_WORDS[w] for w in parts)
 
 
-TAGALOG_TIME = re.compile(r"\b(anong|ano ang|anung) oras( na)?\b|\boras na( ba)?\b")
-TAGALOG_LOUDER = re.compile(r"^(paki ?)?lakas(an|in)( mo)?( (ang|yung|ng) volume)?( po| naman| pa)*$")
-TAGALOG_QUIETER = re.compile(r"^(paki ?)?(hina|hinaan|hinain)( mo)?( (ang|yung|ng) volume)?( po| naman| pa)*$")
 TIME_ASKED = re.compile(r"^(well )?((what'?s|what is|whats|tell me) )?(the )?time( is it| now| today| please| right now)?$|"
                         r"^(well )?what time is it( now| please| right now| today)?$")
 
@@ -594,8 +586,6 @@ def quick_ack(action, text):
         return SCENE_ACKS[action]
     if action is tell_time:
         return tell_time()
-    if hasattr(action, 'volume_step'):
-        return 'Sige.'                    # "okay" in Tagalog: the change itself is the answer
     if hasattr(action, 'volume'):
         return f"Volume's at {min(action.volume, MAX_VOLUME)}."
     if action is turn_on:
@@ -1449,23 +1439,6 @@ def deepgram_query(streaming, language='en'):
     return urllib.parse.urlencode(q)
 
 
-TAGALOG_MARK = ' [heard as Tagalog: "'             # the second hearing, appended to the English one
-
-
-def with_tagalog(english, tagalog):
-    """One line for Claude and the log: the English hearing, plus the Tagalog one when it differs."""
-    words = lambda x: re.sub(r"[^\w\s']", ' ', x.lower()).split()
-    if not tagalog or words(tagalog) == words(english):
-        return english
-    return f'{english}{TAGALOG_MARK}{tagalog}"]'
-
-
-def hearings(text):
-    """(english, tagalog) from with_tagalog()'s line."""
-    english, _, rest = text.partition(TAGALOG_MARK)
-    return english, rest[:-2] if rest.endswith('"]') else rest
-
-
 class DeepgramTranscriber:
     """Deepgram Nova-3 live streaming, with keyterm prompting for the words Zephyr hears. Chosen on
     27 Oct by replaying her kept misses through both: about twice as fast as Corelynx, and live it got
@@ -1529,77 +1502,11 @@ class DeepgramTranscriber:
             return self.fallback.start() if self.fallback else None
 
 
-class TaglishTranscriber:
-    """Mark speaks Taglish. Tested on his own recordings (30 Oct), Deepgram English always caught "Zephyr"
-    and English titles but turned Tagalog into nonsense ("Zephyr no Orsna"), Tagalog got the Tagalog ("oras
-    na", "pakihinaan yung volume") but not the name, and multilingual once answered in Hebrew script.
-    So both listen at once and Claude gets both hearings: 7 of 7 of his Taglish requests right, against
-    3 of 7 before the Taglish guidance. English still decides when you've finished and whether the name
-    was said. Costs twice the audio minutes (~$4-6 a month)."""
-
-    def __init__(self, key, fallback=None):
-        self.english = DeepgramTranscriber(key, fallback, 'en')
-        self.tagalog = DeepgramTranscriber(key, None, 'tl')
-
-    def start(self):
-        english = self.english.start()
-        if not isinstance(english, DeepgramSession):
-            return english                         # Deepgram is down: Corelynx alone, English only
-        try:
-            tagalog = self.tagalog.start()
-        except Exception:
-            tagalog = None
-        return TaglishSession(english, tagalog) if tagalog else english
-
-
-class TaglishSession:
-    """Both hearings of one request: timing questions go to English, the text combines them."""
-
-    def __init__(self, english, tagalog):
-        self.english, self.tagalog = english, tagalog
-
-    @property
-    def ok(self):
-        return self.english.ok
-
-    def send(self, frame):
-        self.english.send(frame)
-        self.tagalog.send(frame)
-
-    def dangling(self):
-        return self.english.dangling()
-
-    def settled(self):
-        return self.english.settled()
-
-    def sounds_finished(self):
-        return self.english.sounds_finished()
-
-    def peek(self):
-        return self.english.peek()
-
-    def text(self, settle_s=0.12):
-        from concurrent.futures import ThreadPoolExecutor
-        pool = ThreadPoolExecutor(2)                         # both finish together, not one after the other
-        english, tagalog = pool.submit(self.english.text), pool.submit(self.tagalog.text)
-        heard = english.result()
-        try:
-            other = tagalog.result(timeout=0.15)             # Tagalog took up to 0.9 s: never wait much longer
-        except Exception:
-            other = self.tagalog.peek()                      # than English; take what it has so far
-        pool.shutdown(wait=False)
-        return with_tagalog(heard, other)
-
-    def close(self):
-        self.english.close()
-        self.tagalog.close()
-
-
 class DeepgramSession:
     """One request on Deepgram: the same questions as LiveSession (finished? mid-thought? the text)."""
 
     def __init__(self, ws):
-        self.ws, self.ok = ws, True
+        self.ws, self.ok, self.responded = ws, True, False
         self.finals, self.interim, self.last_final = [], '', False
         self.changed = time.time()
         self.finalized = threading.Event()
@@ -1612,6 +1519,7 @@ class DeepgramSession:
             except Exception:
                 self.finalized.set()
                 return
+            self.responded = True                                   # the connection is alive, even if it heard nothing
             if m.get('type') == 'Results':
                 words = m['channel']['alternatives'][0]['transcript'].strip()
                 if m.get('is_final'):
@@ -1673,7 +1581,7 @@ class LiveSession:
     Corelynx's LLM stage: in testing it rewrote "Zephyr" to "Jarvis"."""
 
     def __init__(self, ws):
-        self.ws, self.ok = ws, True
+        self.ws, self.ok, self.responded = ws, True, False
         self.order, self.live, self.deltas = [], {}, {}
         self.changed = time.time()                                  # when the transcript last moved
         threading.Thread(target=self._read, daemon=True).start()
@@ -1684,6 +1592,7 @@ class LiveSession:
                 m = json.loads(self.ws.recv())
             except Exception:
                 return
+            self.responded = True
             t, uid = m.get('type'), m.get('utterance_id')
             if uid is not None and uid not in self.order:
                 self.order.append(uid)
@@ -1796,8 +1705,8 @@ def main():
     spotter = NameSpotter(early=True)      # the barge-in spotter below stays on final results (it needs to be sure)
     voice = Voice()
     if ENV.get('DEEPGRAM_API_KEY'):
-        live = TaglishTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
-        log.info('speech-to-text: Deepgram Nova-3, English + Tagalog (Corelynx as backup)')
+        live = DeepgramTranscriber(ENV['DEEPGRAM_API_KEY'], fallback=LiveTranscriber(ENV['CORELYNX_API_KEY'], keep_spare=False))
+        log.info('speech-to-text: Deepgram Nova-3, English (Corelynx as backup)')
     else:
         live = LiveTranscriber(ENV['CORELYNX_API_KEY'])
     memory = None
@@ -1983,13 +1892,23 @@ def main():
                     return
                 time.sleep(0.05)
 
-        def listen(preroll, giveup, strict=False, duck=True, chime=False):
+        def listen(preroll, giveup, strict=False, duck=True, chime=False, abandonable=False):
             """Record until a pause; return (text, heard_speech). Live text, else a one-shot upload.
             The TV is muted while you talk (duck) and unmuted as soon as you've finished."""
             if duck:
                 DUCK.duck()               # ~0.05 s; audio keeps queuing meanwhile, nothing is lost
             session = live.start()
             stop_chime = threading.Event()
+
+            def not_for_me(command):
+                """Two seconds in: an early trigger whose audio doesn't hold the name, and whose live text
+                doesn't either, is TV or talk. The nightly review counted 24 such recordings running the full
+                20 s on 30 Oct, each then transcribed and ignored."""
+                if not spotter.was_early:
+                    return False
+                if session and (NAME_LOOSE.search(session.peek()) or NAME_AT_START.search(session.peek())):
+                    return False
+                return spotter.confirm(np.concatenate(list(preroll)[-20:] + command)) < CONFIRM_CONFIDENCE
             if session:
                 for f in preroll:
                     session.send(f)
@@ -1999,8 +1918,16 @@ def main():
                                              on_frame=session.send if session else None,
                                              finished=session.sounds_finished if session else None,
                                              dangling=session.dangling if session else None,
-                                             settled=session.settled if session else None)
+                                             settled=session.settled if session else None,
+                                             abandon=not_for_me if abandonable else None)
             stop_chime.set()
+            if LAST_END[0] == 'not for me':
+                session and session.close()
+                mic['to'] = 'barge'
+                threading.Thread(target=DUCK.restore, daemon=True).start()
+                last['rejected'] = True
+                log.info('early trigger not confirmed after 2 s; stopped listening')
+                return '', False
             mic['to'] = 'barge'           # don't listen to ourselves while we work and talk
             threading.Thread(target=DUCK.restore, daemon=True).start()
             # what was just said (plus ~1.5 s before, where the name usually is), for voice ID
@@ -2026,14 +1953,16 @@ def main():
             if session:
                 text = session.text()
                 session.close()
-            if not text and (speech or not session):
+            # Upload again only when the live connection never answered: an empty answer from a working
+            # connection means there was nothing to hear (30 Oct: 43 uploads, nearly all noise, ~2 s each)
+            if not text and (not session or (speech and not session.responded)):
                 text = transcribe(np.concatenate(command))
                 how = 'upload'
             else:
                 how = 'live'
             log.info(f'transcript ({how}, {time.time() - ended:.2f} s after you stopped): "{text}"')
             RHYTHM.note_rate(len(text.split()), LAST_TALK_S[0])
-            keep_all = os.path.exists(os.path.join(DIAG_DIR, 'keep-all'))     # e.g. to collect Taglish for testing
+            keep_all = os.path.exists(os.path.join(DIAG_DIR, 'keep-all'))     # e.g. to collect samples for testing
             if DIAGNOSTIC or keep_all or ((not speech or len(text.split()) <= 2) and len(os.listdir(DIAG_DIR) if os.path.isdir(DIAG_DIR) else []) < MISSED_CLIPS_KEPT):
                 save_diag(np.concatenate(command), text)      # misses kept to tune quiet night-time listening
             return text, speech
@@ -2084,7 +2013,7 @@ def main():
         try:
             if by_name:
                 text, heard_speech = listen(list(history), NAME_PAUSE_S, duck=sure and not paused,   # people pause after the name
-                                            chime=not sounded and not paused)
+                                            chime=not sounded and not paused, abandonable=True)
                 sounded = sounded or chimed['done']
             else:
                 text, heard_speech = listen(list(history)[-PREROLL_FRAMES:], NO_SPEECH_GIVEUP_S, duck=sure and not paused)
@@ -2116,6 +2045,9 @@ def main():
                 continue
             action = parse(text)
             name_in_text = bool(NAME_LOOSE.search(text) or NAME_AT_START.search(text))
+            if len(text.split()) > LONG_MEDIA_WORDS and not (NAME_LOOSE.search(' '.join(text.split()[:4])) or NAME_AT_START.search(text)):
+                log.info(f'{len(text.split())} words without the name up front: TV or talk, ignored')
+                continue
             # From across the room the name comes out as a different word every time ("That's true",
             # "Left for", "Therefore", 27 Oct) though the spotter heard it and the voice was clearly
             # Mark's: then trust them. TV and other people still need the name in the transcript.
@@ -2266,7 +2198,8 @@ def pick_device(name_part, kind):
     return default
 
 
-def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=None, finished=None, dangling=None, settled=None):
+def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=None, finished=None, dangling=None, settled=None,
+                   abandon=None):
     """Collect audio until you've finished: a pause of END_SILENCE_S, or a shorter QUICK_END_S
     pause once the live transcript shows a complete sentence, or the time limit.
     Time is counted in audio frames (80 ms each), not by the clock."""
@@ -2285,6 +2218,9 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
         command.append(f)
         if on_frame:
             on_frame(f)                                  # live-stream it while still recording
+        if abandon and n == int(ABANDON_CHECK_S / sec) and abandon(command):
+            reason = 'not for me'                        # an early trigger that wasn't the name: stop now
+            break
         if time.time() < SOUND_UNTIL and not SPEAKERPHONE and not (PHONE and PHONE.connected):
             skipped += 1                                 # the laptop mic hears the wake sound: don't judge it
             continue
@@ -2316,6 +2252,7 @@ def record_command(frames, preroll, noise, giveup=NO_SPEECH_GIVEUP_S, on_frame=N
             reason = 'nothing said'
             break
     LAST_TALK_S[0] = talked * sec
+    LAST_END[0] = reason
     log.info(f'recorded {n * sec:.1f} s, ended by {reason}' + (
         f' (your gaps ~{RHYTHM.gap():.2f} s)' if RHYTHM.gap() else ''))
     return command, heard_speech
